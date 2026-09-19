@@ -1,0 +1,7 @@
+out/
+bin/
+*.class
+Untitled-1.txt
+.DS_Store
+.idea/
+*.iml
