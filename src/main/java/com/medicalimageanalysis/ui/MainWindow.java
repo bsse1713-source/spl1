@@ -1,7 +1,9 @@
 package com.medicalimageanalysis.ui;
 
 import com.medicalimageanalysis.io.BmpReader;
+import com.medicalimageanalysis.io.TiffReader;
 import com.medicalimageanalysis.model.BmpImage;
+import com.medicalimageanalysis.model.TiffImage;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -26,7 +28,8 @@ public final class MainWindow {
     private final JFrame frame = new JFrame("Medical Image Analysis System");
     private final ImagePanel imagePanel = new ImagePanel();
     private final JTextArea information = new JTextArea();
-    private final BmpReader reader = new BmpReader();
+    private final BmpReader bmpReader = new BmpReader();
+    private final TiffReader tiffReader = new TiffReader();
     private Path openedPath;
 
     public MainWindow() {
@@ -34,13 +37,18 @@ public final class MainWindow {
         frame.setSize(1000, 700);
         frame.setLocationByPlatform(true);
 
-        JButton openButton = new JButton("Open BMP");
-        openButton.addActionListener(event -> openBmp());
+        JButton openBmpButton = new JButton("Open BMP");
+        openBmpButton.addActionListener(event -> openBmp());
+
+        JButton openTiffButton = new JButton("Open TIFF");
+        openTiffButton.addActionListener(event -> openTiff());
+
         JButton saveButton = new JButton("Save Copy");
         saveButton.addActionListener(event -> saveCopy());
 
         JPanel buttons = new JPanel();
-        buttons.add(openButton);
+        buttons.add(openBmpButton);
+        buttons.add(openTiffButton);
         buttons.add(saveButton);
         frame.add(buttons, BorderLayout.NORTH);
         frame.add(new JScrollPane(imagePanel), BorderLayout.CENTER);
@@ -48,8 +56,8 @@ public final class MainWindow {
         information.setEditable(false);
         information.setLineWrap(true);
         information.setWrapStyleWord(true);
-        information.setBorder(BorderFactory.createTitledBorder("BMP information"));
-        information.setText("Open an uncompressed BMP file to inspect it.");
+        information.setBorder(BorderFactory.createTitledBorder("Image information"));
+        information.setText("Open a BMP or TIFF file to inspect it.");
         JScrollPane informationPane = new JScrollPane(information);
         informationPane.setPreferredSize(new Dimension(260, 0));
         frame.add(informationPane, BorderLayout.EAST);
@@ -66,8 +74,9 @@ public final class MainWindow {
             return;
         }
         try {
-            openedPath = chooser.getSelectedFile().toPath();
-            BmpImage image = reader.read(openedPath);
+            Path selected = chooser.getSelectedFile().toPath();
+            BmpImage image = bmpReader.read(selected);
+            openedPath = selected;
             imagePanel.setImage(image.toBufferedImage());
             information.setText(formatInformation(image));
         } catch (IOException exception) {
@@ -75,13 +84,31 @@ public final class MainWindow {
         }
     }
 
+    private void openTiff() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Open TIFF image");
+        if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        try {
+            Path selected = chooser.getSelectedFile().toPath();
+            TiffImage image = tiffReader.read(selected);
+            openedPath = selected;
+            imagePanel.setImage(image.toBufferedImage());
+            information.setText(formatInformation(image));
+        } catch (IOException exception) {
+            information.setText("Could not open TIFF:\n" + exception.getMessage());
+        }
+    }
+
     private void saveCopy() {
         if (openedPath == null) {
-            information.setText("Open a BMP file before saving a copy.");
+            information.setText("Open an image file before saving a copy.");
             return;
         }
         JFileChooser chooser = new JFileChooser();
         chooser.setDialogTitle("Save an unchanged copy");
+        chooser.setSelectedFile(openedPath.getFileName().toFile());
         if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION) {
             return;
         }
@@ -95,20 +122,31 @@ public final class MainWindow {
     }
 
     private static String formatInformation(BmpImage image) {
-        return "Width: " + image.getWidth()
+        return "Format: BMP"
+                + "\nWidth: " + image.getWidth()
                 + "\nHeight: " + image.getHeight()
                 + "\nBits per pixel: " + image.getBitsPerPixel()
                 + "\nFile size from header: " + image.getFileSize() + " bytes"
                 + "\nPixel data offset: " + image.getPixelDataOffset() + " bytes";
     }
 
+    private static String formatInformation(TiffImage image) {
+        return "Format: TIFF"
+                + "\nWidth: " + image.getWidth()
+                + "\nHeight: " + image.getHeight()
+                + "\nBits per sample: " + image.getBitsPerSample()
+                + "\nSamples per pixel: " + image.getSamplesPerPixel()
+                + "\nByte order: " + image.getByteOrder();
+    }
+
     private static final class ImagePanel extends JPanel {
         private static final long serialVersionUID = 1L;
         private transient BufferedImage image;
+        private final JLabel placeholder = new JLabel("No image loaded", SwingConstants.CENTER);
 
         private ImagePanel() {
             setPreferredSize(new Dimension(700, 600));
-            add(new JLabel("No image loaded", SwingConstants.CENTER));
+            add(placeholder);
         }
 
         private void setImage(BufferedImage image) {
