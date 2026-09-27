@@ -43,12 +43,15 @@ public final class MainWindow {
         JButton openTiffButton = new JButton("Open TIFF");
         openTiffButton.addActionListener(event -> openTiff());
 
+        JButton readDcmButton = new JButton("Read DCM");
+
         JButton saveButton = new JButton("Save Copy");
         saveButton.addActionListener(event -> saveCopy());
 
         JPanel buttons = new JPanel();
         buttons.add(openBmpButton);
         buttons.add(openTiffButton);
+        buttons.add(readDcmButton);
         buttons.add(saveButton);
         frame.add(buttons, BorderLayout.NORTH);
         frame.add(new JScrollPane(imagePanel), BorderLayout.CENTER);
