@@ -4,6 +4,7 @@ import com.medicalimageanalysis.io.BmpReader;
 import com.medicalimageanalysis.io.TiffReader;
 import com.medicalimageanalysis.model.BmpImage;
 import com.medicalimageanalysis.model.TiffImage;
+import com.medicalimageanalysis.processing.GrayscaleConverter;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -31,6 +32,7 @@ public final class MainWindow {
     private final BmpReader bmpReader = new BmpReader();
     private final TiffReader tiffReader = new TiffReader();
     private Path openedPath;
+    private BufferedImage currentImage;
 
     public MainWindow() {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -45,6 +47,9 @@ public final class MainWindow {
 
         JButton readDcmButton = new JButton("Read DCM");
 
+        JButton grayscaleButton = new JButton("Grayscale");
+        grayscaleButton.addActionListener(event -> convertToGrayscale());
+
         JButton saveButton = new JButton("Save Copy");
         saveButton.addActionListener(event -> saveCopy());
 
@@ -52,6 +57,7 @@ public final class MainWindow {
         buttons.add(openBmpButton);
         buttons.add(openTiffButton);
         buttons.add(readDcmButton);
+        buttons.add(grayscaleButton);
         buttons.add(saveButton);
         frame.add(buttons, BorderLayout.NORTH);
         frame.add(new JScrollPane(imagePanel), BorderLayout.CENTER);
@@ -80,7 +86,8 @@ public final class MainWindow {
             Path selected = chooser.getSelectedFile().toPath();
             BmpImage image = bmpReader.read(selected);
             openedPath = selected;
-            imagePanel.setImage(image.toBufferedImage());
+            currentImage = image.toBufferedImage();
+            imagePanel.setImage(currentImage);
             information.setText(formatInformation(image));
         } catch (IOException exception) {
             information.setText("Could not open BMP:\n" + exception.getMessage());
@@ -97,11 +104,23 @@ public final class MainWindow {
             Path selected = chooser.getSelectedFile().toPath();
             TiffImage image = tiffReader.read(selected);
             openedPath = selected;
-            imagePanel.setImage(image.toBufferedImage());
+            currentImage = image.toBufferedImage();
+            imagePanel.setImage(currentImage);
             information.setText(formatInformation(image));
         } catch (IOException exception) {
             information.setText("Could not open TIFF:\n" + exception.getMessage());
         }
+    }
+
+    private void convertToGrayscale() {
+        if (currentImage == null) {
+            information.setText("Open an image file before converting to grayscale.");
+            return;
+        }
+
+        currentImage = GrayscaleConverter.toGrayscale(currentImage);
+        imagePanel.setImage(currentImage);
+        information.append("\n\nDisplayed image converted to grayscale.");
     }
 
     private void saveCopy() {
