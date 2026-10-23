@@ -4,6 +4,7 @@ import com.medicalimageanalysis.io.BmpReader;
 import com.medicalimageanalysis.io.TiffReader;
 import com.medicalimageanalysis.model.BmpImage;
 import com.medicalimageanalysis.model.TiffImage;
+import com.medicalimageanalysis.processing.GeometricTransformer;
 import com.medicalimageanalysis.processing.GrayscaleConverter;
 
 import javax.swing.BorderFactory;
@@ -11,6 +12,7 @@ import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -50,6 +52,9 @@ public final class MainWindow {
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
 
+        JButton transformButton = new JButton("Geometric Transform");
+        transformButton.addActionListener(event -> transformImage());
+
         JButton saveButton = new JButton("Save Copy");
         saveButton.addActionListener(event -> saveCopy());
 
@@ -58,6 +63,7 @@ public final class MainWindow {
         buttons.add(openTiffButton);
         buttons.add(readDcmButton);
         buttons.add(grayscaleButton);
+        buttons.add(transformButton);
         buttons.add(saveButton);
         frame.add(buttons, BorderLayout.NORTH);
         frame.add(new JScrollPane(imagePanel), BorderLayout.CENTER);
@@ -121,6 +127,77 @@ public final class MainWindow {
         currentImage = GrayscaleConverter.toGrayscale(currentImage);
         imagePanel.setImage(currentImage);
         information.append("\n\nDisplayed image converted to grayscale.");
+    }
+
+    private void transformImage() {
+        if (currentImage == null) {
+            information.setText("Open an image file before applying a geometric transformation.");
+            return;
+        }
+
+        String[] operations = {
+                "Rotate clockwise",
+                "Scale",
+                "Translate",
+                "Flip horizontally",
+                "Flip vertically"
+        };
+        String operation = (String) JOptionPane.showInputDialog(frame,
+                "Choose a geometric transformation:", "Geometric Transform",
+                JOptionPane.PLAIN_MESSAGE, null, operations, operations[0]);
+        if (operation == null) {
+            return;
+        }
+
+        try {
+            if (operations[0].equals(operation)) {
+                String value = JOptionPane.showInputDialog(frame,
+                        "Clockwise rotation angle in degrees:", "90");
+                if (value == null) {
+                    return;
+                }
+                currentImage = GeometricTransformer.rotate(currentImage, Double.parseDouble(value));
+            } else if (operations[1].equals(operation)) {
+                String value = JOptionPane.showInputDialog(frame,
+                        "Horizontal and vertical scale factors (for example, 1.5, 1.5):",
+                        "1.0, 1.0");
+                if (value == null) {
+                    return;
+                }
+                String[] factors = value.split(",", -1);
+                if (factors.length != 2) {
+                    throw new IllegalArgumentException("Enter exactly two scale factors separated by a comma.");
+                }
+                currentImage = GeometricTransformer.scale(currentImage,
+                        Double.parseDouble(factors[0].trim()),
+                        Double.parseDouble(factors[1].trim()));
+            } else if (operations[2].equals(operation)) {
+                String horizontal = JOptionPane.showInputDialog(frame,
+                        "Horizontal translation in pixels (positive moves right):", "0");
+                if (horizontal == null) {
+                    return;
+                }
+                String vertical = JOptionPane.showInputDialog(frame,
+                        "Vertical translation in pixels (positive moves down):", "0");
+                if (vertical == null) {
+                    return;
+                }
+                currentImage = GeometricTransformer.translate(currentImage,
+                        Integer.parseInt(horizontal.trim()), Integer.parseInt(vertical.trim()));
+            } else if (operations[3].equals(operation)) {
+                currentImage = GeometricTransformer.flipHorizontal(currentImage);
+            } else {
+                currentImage = GeometricTransformer.flipVertical(currentImage);
+            }
+        } catch (IllegalArgumentException exception) {
+            information.append("\n\nCould not apply transformation: " + exception.getMessage());
+            return;
+        }
+
+        imagePanel.setImage(currentImage);
+        information.append("\n\nApplied geometric transformation: " + operation
+                + ".\nDisplayed dimensions: " + currentImage.getWidth() + " x "
+                + currentImage.getHeight());
     }
 
     private void saveCopy() {

@@ -7,7 +7,7 @@ This is a plain Java 21 Swing application with no external libraries.
 From the repository root:
 
 ```text
-javac -d out src/main/java/com/medicalimageanalysis/Main.java src/main/java/com/medicalimageanalysis/model/BmpImage.java src/main/java/com/medicalimageanalysis/model/TiffImage.java src/main/java/com/medicalimageanalysis/io/BmpReader.java src/main/java/com/medicalimageanalysis/io/TiffReader.java src/main/java/com/medicalimageanalysis/processing/GrayscaleConverter.java src/main/java/com/medicalimageanalysis/ui/MainWindow.java
+javac -d out src/main/java/com/medicalimageanalysis/Main.java src/main/java/com/medicalimageanalysis/model/BmpImage.java src/main/java/com/medicalimageanalysis/model/TiffImage.java src/main/java/com/medicalimageanalysis/io/BmpReader.java src/main/java/com/medicalimageanalysis/io/TiffReader.java src/main/java/com/medicalimageanalysis/processing/GrayscaleConverter.java src/main/java/com/medicalimageanalysis/processing/GeometricTransformer.java src/main/java/com/medicalimageanalysis/ui/MainWindow.java
 java -cp out com.medicalimageanalysis.Main
 ```
 
@@ -17,4 +17,7 @@ read directly with Java input streams, converted into small custom image
 models, displayed with Swing, and copied without modifying the original file.
 Use the Grayscale button to convert a displayed BMP or TIFF image to
 grayscale using weighted luminance; alpha is preserved and the source file
-remains unchanged.
+remains unchanged. Use Geometric Transform to rotate, scale, translate, or
+flip the displayed image. Rotation expands the canvas to fit; translation
+keeps the original canvas size, with uncovered pixels transparent. Geometric
+operations use nearest-neighbor sampling and do not modify the source file.
