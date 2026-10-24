@@ -4,22 +4,26 @@ import com.medicalimageanalysis.io.BmpReader;
 import com.medicalimageanalysis.io.TiffReader;
 import com.medicalimageanalysis.model.BmpImage;
 import com.medicalimageanalysis.model.TiffImage;
+import com.medicalimageanalysis.processing.BrightnessContrastAdjuster;
 import com.medicalimageanalysis.processing.GeometricTransformer;
 import com.medicalimageanalysis.processing.GrayscaleConverter;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSlider;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.Graphics;
+import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -52,6 +56,9 @@ public final class MainWindow {
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
 
+        JButton brightnessContrastButton = new JButton("Brightness / Contrast");
+        brightnessContrastButton.addActionListener(event -> adjustBrightnessContrast());
+
         JButton transformButton = new JButton("Geometric Transform");
         transformButton.addActionListener(event -> transformImage());
 
@@ -63,6 +70,7 @@ public final class MainWindow {
         buttons.add(openTiffButton);
         buttons.add(readDcmButton);
         buttons.add(grayscaleButton);
+        buttons.add(brightnessContrastButton);
         buttons.add(transformButton);
         buttons.add(saveButton);
         frame.add(buttons, BorderLayout.NORTH);
@@ -127,6 +135,64 @@ public final class MainWindow {
         currentImage = GrayscaleConverter.toGrayscale(currentImage);
         imagePanel.setImage(currentImage);
         information.append("\n\nDisplayed image converted to grayscale.");
+    }
+
+    private void adjustBrightnessContrast() {
+        if (currentImage == null) {
+            information.setText("Open an image file before adjusting brightness or contrast.");
+            return;
+        }
+
+        BufferedImage original = currentImage;
+        JDialog dialog = new JDialog(frame, "Brightness / Contrast", true);
+        JSlider brightnessSlider = new JSlider(-100, 100, 0);
+        JSlider contrastSlider = new JSlider(0, 200, 100);
+        JLabel brightnessLabel = new JLabel("Brightness: 0");
+        JLabel contrastLabel = new JLabel("Contrast: 1.00");
+        JButton applyButton = new JButton("Apply");
+        JButton cancelButton = new JButton("Cancel");
+        boolean[] applied = {false};
+
+        Runnable updatePreview = () -> {
+            int brightness = brightnessSlider.getValue();
+            double contrast = contrastSlider.getValue() / 100.0;
+            brightnessLabel.setText("Brightness: " + brightness);
+            contrastLabel.setText(String.format("Contrast: %.2f", contrast));
+            imagePanel.setImage(BrightnessContrastAdjuster.adjust(original, brightness, contrast));
+        };
+        brightnessSlider.addChangeListener(event -> updatePreview.run());
+        contrastSlider.addChangeListener(event -> updatePreview.run());
+        applyButton.addActionListener(event -> {
+            currentImage = BrightnessContrastAdjuster.adjust(original,
+                    brightnessSlider.getValue(), contrastSlider.getValue() / 100.0);
+            applied[0] = true;
+            dialog.dispose();
+        });
+        cancelButton.addActionListener(event -> dialog.dispose());
+
+        JPanel controls = new JPanel(new GridLayout(0, 1, 0, 6));
+        controls.setBorder(BorderFactory.createEmptyBorder(12, 12, 6, 12));
+        controls.add(brightnessLabel);
+        controls.add(brightnessSlider);
+        controls.add(contrastLabel);
+        controls.add(contrastSlider);
+
+        JPanel buttons = new JPanel();
+        buttons.add(applyButton);
+        buttons.add(cancelButton);
+        dialog.add(controls, BorderLayout.CENTER);
+        dialog.add(buttons, BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(applyButton);
+        dialog.pack();
+        dialog.setLocationRelativeTo(frame);
+        dialog.setVisible(true);
+
+        if (!applied[0]) {
+            imagePanel.setImage(original);
+        } else {
+            imagePanel.setImage(currentImage);
+            information.append("\n\nApplied brightness and contrast adjustments.");
+        }
     }
 
     private void transformImage() {
