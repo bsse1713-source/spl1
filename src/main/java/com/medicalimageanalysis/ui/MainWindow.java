@@ -7,6 +7,7 @@ import com.medicalimageanalysis.model.TiffImage;
 import com.medicalimageanalysis.processing.BrightnessContrastAdjuster;
 import com.medicalimageanalysis.processing.GeometricTransformer;
 import com.medicalimageanalysis.processing.GrayscaleConverter;
+import com.medicalimageanalysis.processing.HistogramAnalyzer;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -21,10 +22,14 @@ import javax.swing.JSlider;
 import javax.swing.JTextArea;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FontMetrics;
 import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
 import java.awt.Image;
+import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -56,6 +61,9 @@ public final class MainWindow {
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
 
+        JButton histogramButton = new JButton("Histogram");
+        histogramButton.addActionListener(event -> showHistogram());
+
         JButton brightnessContrastButton = new JButton("Brightness / Contrast");
         brightnessContrastButton.addActionListener(event -> adjustBrightnessContrast());
 
@@ -70,6 +78,7 @@ public final class MainWindow {
         buttons.add(openTiffButton);
         buttons.add(readDcmButton);
         buttons.add(grayscaleButton);
+        buttons.add(histogramButton);
         buttons.add(brightnessContrastButton);
         buttons.add(transformButton);
         buttons.add(saveButton);
@@ -135,6 +144,33 @@ public final class MainWindow {
         currentImage = GrayscaleConverter.toGrayscale(currentImage);
         imagePanel.setImage(currentImage);
         information.append("\n\nDisplayed image converted to grayscale.");
+    }
+
+    private void showHistogram() {
+        if (currentImage == null) {
+            information.setText("Open an image file before analyzing its histogram.");
+            return;
+        }
+
+        long[] frequencies = HistogramAnalyzer.calculate(currentImage);
+        JDialog dialog = new JDialog(frame, "Pixel Intensity Histogram", true);
+        dialog.setLayout(new BorderLayout(8, 8));
+
+        JLabel summary = new JLabel("Weighted grayscale intensity (0-255) | "
+                + currentImage.getWidth() + " x " + currentImage.getHeight() + " pixels");
+        summary.setBorder(BorderFactory.createEmptyBorder(10, 12, 0, 12));
+        dialog.add(summary, BorderLayout.NORTH);
+        dialog.add(new HistogramPanel(frequencies), BorderLayout.CENTER);
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(event -> dialog.dispose());
+        JPanel buttons = new JPanel();
+        buttons.add(closeButton);
+        dialog.add(buttons, BorderLayout.SOUTH);
+        dialog.getRootPane().setDefaultButton(closeButton);
+        dialog.pack();
+        dialog.setLocationRelativeTo(frame);
+        dialog.setVisible(true);
     }
 
     private void adjustBrightnessContrast() {
@@ -336,6 +372,71 @@ public final class MainWindow {
             int height = Math.max(1, (int) (image.getHeight() * scale));
             Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
             graphics.drawImage(scaled, (getWidth() - width) / 2, (getHeight() - height) / 2, this);
+        }
+    }
+
+    private static final class HistogramPanel extends JPanel {
+        private static final long serialVersionUID = 1L;
+        private static final int LEFT_MARGIN = 58;
+        private static final int RIGHT_MARGIN = 18;
+        private static final int TOP_MARGIN = 20;
+        private static final int BOTTOM_MARGIN = 38;
+        private final long[] frequencies;
+        private final long maximumFrequency;
+
+        private HistogramPanel(long[] frequencies) {
+            this.frequencies = frequencies.clone();
+            long maximum = 0;
+            for (long frequency : frequencies) {
+                maximum = Math.max(maximum, frequency);
+            }
+            maximumFrequency = maximum;
+            setPreferredSize(new Dimension(680, 380));
+            setBackground(Color.WHITE);
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D graph = (Graphics2D) graphics.create();
+            graph.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                    RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int plotWidth = getWidth() - LEFT_MARGIN - RIGHT_MARGIN;
+            int plotHeight = getHeight() - TOP_MARGIN - BOTTOM_MARGIN;
+            int plotBottom = TOP_MARGIN + plotHeight;
+            graph.setColor(new Color(225, 225, 225));
+            graph.drawLine(LEFT_MARGIN, TOP_MARGIN, LEFT_MARGIN, plotBottom);
+            graph.drawLine(LEFT_MARGIN, plotBottom, LEFT_MARGIN + plotWidth, plotBottom);
+
+            graph.setColor(new Color(230, 230, 230));
+            graph.drawLine(LEFT_MARGIN, TOP_MARGIN + plotHeight / 2,
+                    LEFT_MARGIN + plotWidth, TOP_MARGIN + plotHeight / 2);
+            graph.setColor(Color.DARK_GRAY);
+            graph.drawString(Long.toString(maximumFrequency), 6, TOP_MARGIN + 5);
+            graph.drawString("Intensity", LEFT_MARGIN + plotWidth / 2 - 25, getHeight() - 8);
+
+            FontMetrics metrics = graph.getFontMetrics();
+            int[] levels = {0, 64, 128, 192, 255};
+            for (int level : levels) {
+                int x = LEFT_MARGIN + (int) ((long) level * plotWidth / 255);
+                String label = Integer.toString(level);
+                graph.drawLine(x, plotBottom, x, plotBottom + 4);
+                graph.drawString(label, x - metrics.stringWidth(label) / 2, plotBottom + 18);
+            }
+
+            if (maximumFrequency > 0) {
+                graph.setColor(new Color(65, 105, 145));
+                for (int intensity = 0; intensity < frequencies.length; intensity++) {
+                    int x1 = LEFT_MARGIN + (int) ((long) intensity * plotWidth / 256);
+                    int x2 = LEFT_MARGIN + (int) ((long) (intensity + 1) * plotWidth / 256);
+                    int barHeight = (int) ((double) frequencies[intensity] / maximumFrequency
+                            * plotHeight);
+                    graph.fillRect(x1, plotBottom - barHeight,
+                            Math.max(1, x2 - x1), barHeight);
+                }
+            }
+            graph.dispose();
         }
     }
 }
