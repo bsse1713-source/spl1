@@ -8,6 +8,7 @@ import com.medicalimageanalysis.processing.BrightnessContrastAdjuster;
 import com.medicalimageanalysis.processing.GeometricTransformer;
 import com.medicalimageanalysis.processing.GrayscaleConverter;
 import com.medicalimageanalysis.processing.HistogramAnalyzer;
+import com.medicalimageanalysis.processing.SobelEdgeDetector;
 
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
@@ -61,6 +62,9 @@ public final class MainWindow {
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
 
+        JButton sobelButton = new JButton("Sobel Edges");
+        sobelButton.addActionListener(event -> detectEdges());
+
         JButton histogramButton = new JButton("Histogram");
         histogramButton.addActionListener(event -> showHistogram());
 
@@ -78,6 +82,7 @@ public final class MainWindow {
         buttons.add(openTiffButton);
         buttons.add(readDcmButton);
         buttons.add(grayscaleButton);
+        buttons.add(sobelButton);
         buttons.add(histogramButton);
         buttons.add(brightnessContrastButton);
         buttons.add(transformButton);
@@ -171,6 +176,17 @@ public final class MainWindow {
         dialog.pack();
         dialog.setLocationRelativeTo(frame);
         dialog.setVisible(true);
+    }
+
+    private void detectEdges() {
+        if (currentImage == null) {
+            information.setText("Open an image file before detecting edges.");
+            return;
+        }
+
+        currentImage = SobelEdgeDetector.detect(currentImage);
+        imagePanel.setImage(currentImage);
+        information.append("\n\nApplied Sobel edge detection to the displayed image.");
     }
 
     private void adjustBrightnessContrast() {
