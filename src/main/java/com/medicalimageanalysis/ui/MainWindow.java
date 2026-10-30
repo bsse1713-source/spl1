@@ -1,15 +1,23 @@
 package com.medicalimageanalysis.ui;
 
+import com.medicalimageanalysis.analysis.Thresholding;
 import com.medicalimageanalysis.io.BmpReader;
+import com.medicalimageanalysis.io.DicomReader;
 import com.medicalimageanalysis.io.TiffReader;
 import com.medicalimageanalysis.model.BmpImage;
+import com.medicalimageanalysis.model.DicomImage;
 import com.medicalimageanalysis.model.TiffImage;
 import com.medicalimageanalysis.processing.BrightnessContrastAdjuster;
+import com.medicalimageanalysis.processing.GaussianFilter;
 import com.medicalimageanalysis.processing.GeometricTransformer;
 import com.medicalimageanalysis.processing.GrayscaleConverter;
 import com.medicalimageanalysis.processing.HistogramAnalyzer;
+import com.medicalimageanalysis.processing.HistogramEqualizer;
+import com.medicalimageanalysis.processing.MeanFilter;
+import com.medicalimageanalysis.processing.MedianFilter;
 import com.medicalimageanalysis.processing.SobelEdgeDetector;
 
+import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JDialog;
@@ -25,6 +33,7 @@ import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.FontMetrics;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -32,19 +41,28 @@ import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.Locale;
 
 public final class MainWindow {
+    private static final int MAX_UNDO_ENTRIES = 10;
+
     private final JFrame frame = new JFrame("Medical Image Analysis System");
     private final ImagePanel imagePanel = new ImagePanel();
     private final JTextArea information = new JTextArea();
     private final BmpReader bmpReader = new BmpReader();
+    private final DicomReader dicomReader = new DicomReader();
     private final TiffReader tiffReader = new TiffReader();
+    private final Deque<BufferedImage> undoStack = new ArrayDeque<>();
     private Path openedPath;
     private BufferedImage currentImage;
+    private BufferedImage originalImage;
 
     public MainWindow() {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -58,6 +76,7 @@ public final class MainWindow {
         openTiffButton.addActionListener(event -> openTiff());
 
         JButton readDcmButton = new JButton("Read DCM");
+        readDcmButton.addActionListener(event -> openDicom());
 
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
@@ -74,19 +93,49 @@ public final class MainWindow {
         JButton transformButton = new JButton("Geometric Transform");
         transformButton.addActionListener(event -> transformImage());
 
+        JButton filterButton = new JButton("Filter");
+        filterButton.addActionListener(event -> filterImage());
+
+        JButton equalizeButton = new JButton("Equalize");
+        equalizeButton.addActionListener(event -> equalizeImage());
+
+        JButton thresholdButton = new JButton("Threshold");
+        thresholdButton.addActionListener(event -> thresholdImage());
+
+        JButton resetButton = new JButton("Reset");
+        resetButton.addActionListener(event -> resetImage());
+
+        JButton undoButton = new JButton("Undo");
+        undoButton.addActionListener(event -> undoImage());
+
         JButton saveButton = new JButton("Save Copy");
         saveButton.addActionListener(event -> saveCopy());
 
-        JPanel buttons = new JPanel();
-        buttons.add(openBmpButton);
-        buttons.add(openTiffButton);
-        buttons.add(readDcmButton);
-        buttons.add(grayscaleButton);
-        buttons.add(sobelButton);
-        buttons.add(histogramButton);
-        buttons.add(brightnessContrastButton);
-        buttons.add(transformButton);
-        buttons.add(saveButton);
+        JButton saveProcessedButton = new JButton("Save Processed");
+        saveProcessedButton.addActionListener(event -> saveProcessed());
+
+        JPanel buttons = new JPanel(new GridLayout(3, 1, 0, 0));
+        JPanel firstRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        firstRow.add(openBmpButton);
+        firstRow.add(openTiffButton);
+        firstRow.add(readDcmButton);
+        firstRow.add(grayscaleButton);
+        firstRow.add(sobelButton);
+        JPanel secondRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        secondRow.add(histogramButton);
+        secondRow.add(brightnessContrastButton);
+        secondRow.add(transformButton);
+        secondRow.add(filterButton);
+        secondRow.add(equalizeButton);
+        JPanel thirdRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        thirdRow.add(thresholdButton);
+        thirdRow.add(resetButton);
+        thirdRow.add(undoButton);
+        thirdRow.add(saveButton);
+        thirdRow.add(saveProcessedButton);
+        buttons.add(firstRow);
+        buttons.add(secondRow);
+        buttons.add(thirdRow);
         frame.add(buttons, BorderLayout.NORTH);
         frame.add(new JScrollPane(imagePanel), BorderLayout.CENTER);
 
@@ -94,7 +143,7 @@ public final class MainWindow {
         information.setLineWrap(true);
         information.setWrapStyleWord(true);
         information.setBorder(BorderFactory.createTitledBorder("Image information"));
-        information.setText("Open a BMP or TIFF file to inspect it.");
+        information.setText("Open a BMP, TIFF, or DICOM file to inspect it.");
         JScrollPane informationPane = new JScrollPane(information);
         informationPane.setPreferredSize(new Dimension(260, 0));
         frame.add(informationPane, BorderLayout.EAST);
@@ -115,6 +164,8 @@ public final class MainWindow {
             BmpImage image = bmpReader.read(selected);
             openedPath = selected;
             currentImage = image.toBufferedImage();
+            originalImage = currentImage;
+            undoStack.clear();
             imagePanel.setImage(currentImage);
             information.setText(formatInformation(image));
         } catch (IOException exception) {
@@ -133,10 +184,32 @@ public final class MainWindow {
             TiffImage image = tiffReader.read(selected);
             openedPath = selected;
             currentImage = image.toBufferedImage();
+            originalImage = currentImage;
+            undoStack.clear();
             imagePanel.setImage(currentImage);
             information.setText(formatInformation(image));
         } catch (IOException exception) {
             information.setText("Could not open TIFF:\n" + exception.getMessage());
+        }
+    }
+
+    private void openDicom() {
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Open DICOM image");
+        if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        try {
+            Path selected = chooser.getSelectedFile().toPath();
+            DicomImage image = dicomReader.read(selected);
+            openedPath = selected;
+            currentImage = image.toBufferedImage();
+            originalImage = currentImage;
+            undoStack.clear();
+            imagePanel.setImage(currentImage);
+            information.setText(formatInformation(image));
+        } catch (IOException exception) {
+            information.setText("Could not open DICOM:\n" + exception.getMessage());
         }
     }
 
@@ -146,8 +219,7 @@ public final class MainWindow {
             return;
         }
 
-        currentImage = GrayscaleConverter.toGrayscale(currentImage);
-        imagePanel.setImage(currentImage);
+        updateCurrentImage(GrayscaleConverter.toGrayscale(currentImage));
         information.append("\n\nDisplayed image converted to grayscale.");
     }
 
@@ -184,9 +256,147 @@ public final class MainWindow {
             return;
         }
 
-        currentImage = SobelEdgeDetector.detect(currentImage);
-        imagePanel.setImage(currentImage);
+        updateCurrentImage(SobelEdgeDetector.detect(currentImage));
         information.append("\n\nApplied Sobel edge detection to the displayed image.");
+    }
+
+    private void filterImage() {
+        if (currentImage == null) {
+            information.setText("Open an image file before applying a filter.");
+            return;
+        }
+
+        String[] filters = {"Mean", "Gaussian", "Median"};
+        String filter = (String) JOptionPane.showInputDialog(frame,
+                "Choose a filter:", "Filter",
+                JOptionPane.PLAIN_MESSAGE, null, filters, filters[0]);
+        if (filter == null) {
+            return;
+        }
+
+        try {
+            String sizeValue = JOptionPane.showInputDialog(frame,
+                    "Kernel size (positive odd integer):", "3");
+            if (sizeValue == null) {
+                return;
+            }
+            int kernelSize = Integer.parseInt(sizeValue.trim());
+            if (kernelSize <= 0 || (kernelSize & 1) == 0) {
+                throw new IllegalArgumentException("Kernel size must be a positive odd integer.");
+            }
+
+            BufferedImage filteredImage;
+            String appliedDetails = "Applied " + filter + " filter with kernel size " + kernelSize;
+            if ("Mean".equals(filter)) {
+                filteredImage = MeanFilter.apply(currentImage, kernelSize);
+            } else if ("Gaussian".equals(filter)) {
+                String sigmaValue = JOptionPane.showInputDialog(frame,
+                        "Gaussian sigma (greater than 0):", "1.0");
+                if (sigmaValue == null) {
+                    return;
+                }
+                double sigma = Double.parseDouble(sigmaValue.trim());
+                if (!Double.isFinite(sigma) || sigma <= 0) {
+                    throw new IllegalArgumentException("Sigma must be greater than 0.");
+                }
+                filteredImage = GaussianFilter.apply(currentImage, kernelSize, sigma);
+                appliedDetails += " and sigma " + sigma;
+            } else {
+                filteredImage = MedianFilter.apply(currentImage, kernelSize);
+            }
+
+            updateCurrentImage(filteredImage);
+            information.append("\n\n" + appliedDetails + ".");
+        } catch (IllegalArgumentException exception) {
+            information.append("\n\nCould not apply filter: " + exception.getMessage());
+        }
+    }
+
+    private void equalizeImage() {
+        if (currentImage == null) {
+            information.setText("Open an image file before equalizing its histogram.");
+            return;
+        }
+
+        updateCurrentImage(HistogramEqualizer.equalize(currentImage));
+        information.append("\n\nApplied histogram equalization to the displayed image.");
+    }
+
+    private void thresholdImage() {
+        if (currentImage == null) {
+            information.setText("Open an image file before thresholding it.");
+            return;
+        }
+
+        String[] methods = {"Global", "Otsu"};
+        String method = (String) JOptionPane.showInputDialog(frame,
+                "Choose a thresholding method:", "Threshold",
+                JOptionPane.PLAIN_MESSAGE, null, methods, methods[0]);
+        if (method == null) {
+            return;
+        }
+
+        try {
+            BufferedImage thresholdedImage;
+            if ("Global".equals(method)) {
+                String value = JOptionPane.showInputDialog(frame,
+                        "Threshold value (0-255):", "128");
+                if (value == null) {
+                    return;
+                }
+                int threshold = Integer.parseInt(value.trim());
+                if (threshold < 0 || threshold > 255) {
+                    throw new IllegalArgumentException("Threshold value must be between 0 and 255.");
+                }
+                thresholdedImage = Thresholding.globalThreshold(currentImage, threshold);
+                updateCurrentImage(thresholdedImage);
+                information.append("\n\nApplied global thresholding with value " + threshold + ".");
+            } else {
+                int threshold = Thresholding.calculateOtsuThreshold(currentImage);
+                information.append("\n\nCalculated Otsu threshold: " + threshold + ".");
+                thresholdedImage = Thresholding.globalThreshold(currentImage, threshold);
+                updateCurrentImage(thresholdedImage);
+                information.append("\nApplied Otsu thresholding.");
+            }
+        } catch (IllegalArgumentException exception) {
+            information.append("\n\nCould not apply threshold: " + exception.getMessage());
+        }
+    }
+
+    private void resetImage() {
+        if (currentImage == null || originalImage == null) {
+            information.setText("Open an image file before resetting it.");
+            return;
+        }
+
+        updateCurrentImage(originalImage);
+        information.append("\n\nRestored the original image.");
+    }
+
+    private void undoImage() {
+        if (currentImage == null) {
+            information.setText("Open an image file before undoing an edit.");
+            return;
+        }
+        if (undoStack.isEmpty()) {
+            information.setText("There are no edits to undo.");
+            return;
+        }
+
+        currentImage = undoStack.pop();
+        imagePanel.setImage(currentImage);
+        information.append("\n\nUndid the last image operation.");
+    }
+
+    private void updateCurrentImage(BufferedImage image) {
+        if (currentImage != null) {
+            if (undoStack.size() == MAX_UNDO_ENTRIES) {
+                undoStack.removeLast();
+            }
+            undoStack.push(currentImage);
+        }
+        currentImage = image;
+        imagePanel.setImage(currentImage);
     }
 
     private void adjustBrightnessContrast() {
@@ -215,8 +425,8 @@ public final class MainWindow {
         brightnessSlider.addChangeListener(event -> updatePreview.run());
         contrastSlider.addChangeListener(event -> updatePreview.run());
         applyButton.addActionListener(event -> {
-            currentImage = BrightnessContrastAdjuster.adjust(original,
-                    brightnessSlider.getValue(), contrastSlider.getValue() / 100.0);
+            updateCurrentImage(BrightnessContrastAdjuster.adjust(original,
+                    brightnessSlider.getValue(), contrastSlider.getValue() / 100.0));
             applied[0] = true;
             dialog.dispose();
         });
@@ -267,6 +477,7 @@ public final class MainWindow {
             return;
         }
 
+        BufferedImage transformedImage;
         try {
             if (operations[0].equals(operation)) {
                 String value = JOptionPane.showInputDialog(frame,
@@ -274,7 +485,7 @@ public final class MainWindow {
                 if (value == null) {
                     return;
                 }
-                currentImage = GeometricTransformer.rotate(currentImage, Double.parseDouble(value));
+                transformedImage = GeometricTransformer.rotate(currentImage, Double.parseDouble(value));
             } else if (operations[1].equals(operation)) {
                 String value = JOptionPane.showInputDialog(frame,
                         "Horizontal and vertical scale factors (for example, 1.5, 1.5):",
@@ -286,7 +497,7 @@ public final class MainWindow {
                 if (factors.length != 2) {
                     throw new IllegalArgumentException("Enter exactly two scale factors separated by a comma.");
                 }
-                currentImage = GeometricTransformer.scale(currentImage,
+                transformedImage = GeometricTransformer.scale(currentImage,
                         Double.parseDouble(factors[0].trim()),
                         Double.parseDouble(factors[1].trim()));
             } else if (operations[2].equals(operation)) {
@@ -300,19 +511,19 @@ public final class MainWindow {
                 if (vertical == null) {
                     return;
                 }
-                currentImage = GeometricTransformer.translate(currentImage,
+                transformedImage = GeometricTransformer.translate(currentImage,
                         Integer.parseInt(horizontal.trim()), Integer.parseInt(vertical.trim()));
             } else if (operations[3].equals(operation)) {
-                currentImage = GeometricTransformer.flipHorizontal(currentImage);
+                transformedImage = GeometricTransformer.flipHorizontal(currentImage);
             } else {
-                currentImage = GeometricTransformer.flipVertical(currentImage);
+                transformedImage = GeometricTransformer.flipVertical(currentImage);
             }
         } catch (IllegalArgumentException exception) {
             information.append("\n\nCould not apply transformation: " + exception.getMessage());
             return;
         }
 
-        imagePanel.setImage(currentImage);
+        updateCurrentImage(transformedImage);
         information.append("\n\nApplied geometric transformation: " + operation
                 + ".\nDisplayed dimensions: " + currentImage.getWidth() + " x "
                 + currentImage.getHeight());
@@ -338,6 +549,43 @@ public final class MainWindow {
         }
     }
 
+    private void saveProcessed() {
+        if (currentImage == null) {
+            information.setText("Open an image file before saving the processed image.");
+            return;
+        }
+
+        JFileChooser chooser = new JFileChooser();
+        chooser.setDialogTitle("Save processed image");
+        chooser.setSelectedFile(new File("processed.png"));
+        if (chooser.showSaveDialog(frame) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+
+        Path selectedPath = chooser.getSelectedFile().toPath();
+        String fileName = selectedPath.getFileName().toString();
+        int extensionSeparator = fileName.lastIndexOf('.');
+        if (extensionSeparator <= 0 || extensionSeparator == fileName.length() - 1) {
+            String baseName = extensionSeparator == fileName.length() - 1
+                    ? fileName.substring(0, extensionSeparator) : fileName;
+            selectedPath = selectedPath.resolveSibling(baseName + ".png");
+            fileName = selectedPath.getFileName().toString();
+            extensionSeparator = fileName.lastIndexOf('.');
+        }
+        String format = fileName.substring(extensionSeparator + 1).toLowerCase(Locale.ROOT);
+
+        try {
+            if (!ImageIO.write(currentImage, format, selectedPath.toFile())) {
+                information.append("\n\nCould not save processed image: unsupported format \""
+                        + format + "\".");
+                return;
+            }
+            information.append("\n\nProcessed image saved to " + selectedPath + ".");
+        } catch (IOException exception) {
+            information.append("\n\nCould not save processed image: " + exception.getMessage());
+        }
+    }
+
     private static String formatInformation(BmpImage image) {
         return "Format: BMP"
                 + "\nWidth: " + image.getWidth()
@@ -354,6 +602,24 @@ public final class MainWindow {
                 + "\nBits per sample: " + image.getBitsPerSample()
                 + "\nSamples per pixel: " + image.getSamplesPerPixel()
                 + "\nByte order: " + image.getByteOrder();
+    }
+
+    private static String formatInformation(DicomImage image) {
+        String window = Double.isFinite(image.getWindowCenter())
+                && Double.isFinite(image.getWindowWidth())
+                ? image.getWindowCenter() + " / " + image.getWindowWidth()
+                : "Not specified (using data min/max)";
+        return "Format: DICOM"
+                + "\nPatient name: " + image.getPatientName()
+                + "\nPatient ID: " + image.getPatientId()
+                + "\nModality: " + image.getModality()
+                + "\nStudy date: " + image.getStudyDate()
+                + "\nWidth: " + image.getWidth()
+                + "\nHeight: " + image.getHeight()
+                + "\nBits allocated: " + image.getBitsAllocated()
+                + "\nWindow center / width: " + window
+                + "\nRescale slope: " + image.getRescaleSlope()
+                + "\nRescale intercept: " + image.getRescaleIntercept();
     }
 
     private static final class ImagePanel extends JPanel {
