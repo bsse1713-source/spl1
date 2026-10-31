@@ -7,16 +7,19 @@ This is a plain Java 21 Swing application with no external libraries.
 From the repository root:
 
 ```text
-javac -d out src/main/java/com/medicalimageanalysis/Main.java src/main/java/com/medicalimageanalysis/model/BmpImage.java src/main/java/com/medicalimageanalysis/model/TiffImage.java src/main/java/com/medicalimageanalysis/io/BmpReader.java src/main/java/com/medicalimageanalysis/io/TiffReader.java src/main/java/com/medicalimageanalysis/processing/GrayscaleConverter.java src/main/java/com/medicalimageanalysis/processing/BrightnessContrastAdjuster.java src/main/java/com/medicalimageanalysis/processing/GeometricTransformer.java src/main/java/com/medicalimageanalysis/processing/HistogramAnalyzer.java src/main/java/com/medicalimageanalysis/processing/HistogramEqualizer.java src/main/java/com/medicalimageanalysis/processing/ConvolutionFilter.java src/main/java/com/medicalimageanalysis/processing/MeanFilter.java src/main/java/com/medicalimageanalysis/processing/GaussianFilter.java src/main/java/com/medicalimageanalysis/processing/MedianFilter.java src/main/java/com/medicalimageanalysis/processing/SobelEdgeDetector.java src/main/java/com/medicalimageanalysis/ui/MainWindow.java
+$sources = Get-ChildItem -Path src/main/java -Recurse -Filter *.java | ForEach-Object { $_.FullName }
+javac -d out $sources
 java -cp out com.medicalimageanalysis.Main
 ```
 
 The application supports uncompressed 8-bit, 24-bit, and 32-bit BMP files,
-plus TIFF images supported by the JDK's built-in ImageIO TIFF reader. No
-external image library is required; the first image in a TIFF file is opened.
-Images are converted into small custom image models, displayed with Swing, and
-copied without modifying the original file.
-Use the Grayscale button to convert a displayed BMP or TIFF image to
+TIFF images supported by the JDK's built-in ImageIO TIFF reader, and
+uncompressed single-frame grayscale DICOM files with 8- or 16-bit pixels using
+Explicit or Implicit VR Little Endian transfer syntax. Compressed, color, and
+multi-frame DICOM images are not supported. No external image library is
+required; the first image in a TIFF file is opened. Images are converted into
+custom image models and displayed with Swing.
+Use the Grayscale button to convert a displayed image to
 grayscale using weighted luminance; alpha is preserved and the source file
 remains unchanged. Use Geometric Transform to rotate, scale, translate, or
 flip the displayed image. Rotation expands the canvas to fit; translation

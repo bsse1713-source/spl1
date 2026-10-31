@@ -1,5 +1,9 @@
 package com.medicalimageanalysis.ui;
 
+import com.medicalimageanalysis.analysis.ConnectedComponents;
+import com.medicalimageanalysis.analysis.ImageStatistics;
+import com.medicalimageanalysis.analysis.RegionAnalyzer;
+import com.medicalimageanalysis.analysis.RegionFeature;
 import com.medicalimageanalysis.analysis.Thresholding;
 import com.medicalimageanalysis.io.BmpReader;
 import com.medicalimageanalysis.io.DicomReader;
@@ -48,6 +52,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.List;
 import java.util.Locale;
 
 public final class MainWindow {
@@ -75,8 +80,8 @@ public final class MainWindow {
         JButton openTiffButton = new JButton("Open TIFF");
         openTiffButton.addActionListener(event -> openTiff());
 
-        JButton readDcmButton = new JButton("Read DCM");
-        readDcmButton.addActionListener(event -> openDicom());
+        JButton openDicomButton = new JButton("Open DICOM");
+        openDicomButton.addActionListener(event -> openDicom());
 
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
@@ -102,6 +107,9 @@ public final class MainWindow {
         JButton thresholdButton = new JButton("Threshold");
         thresholdButton.addActionListener(event -> thresholdImage());
 
+        JButton analyzeButton = new JButton("Analyze");
+        analyzeButton.addActionListener(event -> analyzeImage());
+
         JButton resetButton = new JButton("Reset");
         resetButton.addActionListener(event -> resetImage());
 
@@ -118,7 +126,7 @@ public final class MainWindow {
         JPanel firstRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
         firstRow.add(openBmpButton);
         firstRow.add(openTiffButton);
-        firstRow.add(readDcmButton);
+        firstRow.add(openDicomButton);
         firstRow.add(grayscaleButton);
         firstRow.add(sobelButton);
         JPanel secondRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -129,6 +137,7 @@ public final class MainWindow {
         secondRow.add(equalizeButton);
         JPanel thirdRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
         thirdRow.add(thresholdButton);
+        thirdRow.add(analyzeButton);
         thirdRow.add(resetButton);
         thirdRow.add(undoButton);
         thirdRow.add(saveButton);
@@ -361,6 +370,51 @@ public final class MainWindow {
         } catch (IllegalArgumentException exception) {
             information.append("\n\nCould not apply threshold: " + exception.getMessage());
         }
+    }
+
+    private void analyzeImage() {
+        if (currentImage == null) {
+            information.setText("Open an image file before analyzing it.");
+            return;
+        }
+
+        BufferedImage source = currentImage;
+        BufferedImage binaryImage = Thresholding.otsuThreshold(source);
+        int[][] labels = ConnectedComponents.label(binaryImage);
+        List<RegionFeature> regions = RegionAnalyzer.analyze(labels, source);
+        int minimum = ImageStatistics.min(source);
+        int maximum = ImageStatistics.max(source);
+        double mean = ImageStatistics.mean(source);
+        double standardDeviation = ImageStatistics.standardDeviation(source);
+        double entropy = ImageStatistics.entropy(source);
+
+        StringBuilder report = new StringBuilder("Feature analysis (Otsu threshold)")
+                .append("\nRegions: ").append(regions.size())
+                .append("\nImage statistics (grayscale intensity):")
+                .append("\nMin: ").append(minimum)
+                .append("  Max: ").append(maximum)
+                .append(String.format(Locale.ROOT, "\nMean: %.2f  Standard deviation: %.2f"
+                        + "\nShannon entropy: %.3f bits", mean, standardDeviation, entropy))
+                .append("\n\nFirst ").append(Math.min(10, regions.size()))
+                .append(" regions (label, area, centroid, bounds, mean intensity):")
+                .append("\nLabel | Area | Centroid (x, y) | Bounds (minX, minY - maxX, maxY) | Mean");
+
+        if (regions.isEmpty()) {
+            report.append("\nNo foreground regions found.");
+        } else {
+            for (int i = 0; i < Math.min(10, regions.size()); i++) {
+                RegionFeature region = regions.get(i);
+                report.append(String.format(Locale.ROOT, "\n%d | %d | (%.2f, %.2f) | "
+                                + "(%d, %d - %d, %d) | %.2f",
+                        region.getLabel(), region.getArea(),
+                        region.getCentroidX(), region.getCentroidY(),
+                        region.getMinX(), region.getMinY(), region.getMaxX(), region.getMaxY(),
+                        region.getMeanIntensity()));
+            }
+        }
+
+        updateCurrentImage(ConnectedComponents.colorize(labels));
+        information.setText(report.toString());
     }
 
     private void resetImage() {
