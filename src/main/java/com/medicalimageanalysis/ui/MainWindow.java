@@ -25,23 +25,24 @@ import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JMenu;
+import javax.swing.JMenuBar;
+import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSlider;
 import javax.swing.JTextArea;
-import javax.swing.SwingConstants;
+import javax.swing.JToolBar;
+import javax.swing.KeyStroke;
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
-import java.awt.FontMetrics;
-import java.awt.Graphics;
-import java.awt.Graphics2D;
 import java.awt.GridLayout;
-import java.awt.Image;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -59,89 +60,146 @@ public final class MainWindow {
     private final ImagePanel imagePanel = new ImagePanel();
     private final JTextArea information = new JTextArea();
     private final Deque<BufferedImage> undoStack = new ArrayDeque<>();
+    private final ToolPanel toolPanel = new ToolPanel(
+            this::convertToGrayscale,
+            this::adjustBrightnessContrast,
+            this::equalizeImage,
+            this::filterImage,
+            this::detectEdges,
+            this::transformImage,
+            this::showHistogram,
+            this::thresholdImage,
+            this::analyzeImage);
+    private final StatusBar statusBar = new StatusBar();
+    private final JButton[] imageToolbarButtons = new JButton[3];
     private Path openedPath;
     private BufferedImage currentImage;
     private BufferedImage originalImage;
+    private String currentFormat;
 
     public MainWindow() {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(1000, 700);
+        frame.setMinimumSize(new Dimension(900, 600));
+        frame.setSize(1280, 800);
         frame.setLocationByPlatform(true);
+        frame.setJMenuBar(createMenuBar());
 
-        JButton openImageButton = new JButton("Open Image");
-        openImageButton.addActionListener(event -> openImage());
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(createToolbar(), BorderLayout.NORTH);
+        frame.add(top, BorderLayout.NORTH);
 
-        JButton grayscaleButton = new JButton("Grayscale");
-        grayscaleButton.addActionListener(event -> convertToGrayscale());
+        JScrollPane tools = new JScrollPane(toolPanel);
+        tools.setPreferredSize(new Dimension(250, 0));
+        tools.getViewport().setBackground(Theme.PANEL_BACKGROUND);
+        frame.add(tools, BorderLayout.WEST);
 
-        JButton sobelButton = new JButton("Sobel Edges");
-        sobelButton.addActionListener(event -> detectEdges());
-
-        JButton histogramButton = new JButton("Histogram");
-        histogramButton.addActionListener(event -> showHistogram());
-
-        JButton brightnessContrastButton = new JButton("Brightness / Contrast");
-        brightnessContrastButton.addActionListener(event -> adjustBrightnessContrast());
-
-        JButton transformButton = new JButton("Geometric Transform");
-        transformButton.addActionListener(event -> transformImage());
-
-        JButton filterButton = new JButton("Filter");
-        filterButton.addActionListener(event -> filterImage());
-
-        JButton equalizeButton = new JButton("Equalize");
-        equalizeButton.addActionListener(event -> equalizeImage());
-
-        JButton thresholdButton = new JButton("Threshold");
-        thresholdButton.addActionListener(event -> thresholdImage());
-
-        JButton analyzeButton = new JButton("Analyze");
-        analyzeButton.addActionListener(event -> analyzeImage());
-
-        JButton resetButton = new JButton("Reset");
-        resetButton.addActionListener(event -> resetImage());
-
-        JButton undoButton = new JButton("Undo");
-        undoButton.addActionListener(event -> undoImage());
-
-        JButton saveButton = new JButton("Save Copy");
-        saveButton.addActionListener(event -> saveCopy());
-
-        JButton saveProcessedButton = new JButton("Save Processed");
-        saveProcessedButton.addActionListener(event -> saveProcessed());
-
-        JPanel buttons = new JPanel(new GridLayout(3, 1, 0, 0));
-        JPanel firstRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        firstRow.add(openImageButton);
-        firstRow.add(grayscaleButton);
-        firstRow.add(sobelButton);
-        JPanel secondRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        secondRow.add(histogramButton);
-        secondRow.add(brightnessContrastButton);
-        secondRow.add(transformButton);
-        secondRow.add(filterButton);
-        secondRow.add(equalizeButton);
-        JPanel thirdRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        thirdRow.add(thresholdButton);
-        thirdRow.add(analyzeButton);
-        thirdRow.add(resetButton);
-        thirdRow.add(undoButton);
-        thirdRow.add(saveButton);
-        thirdRow.add(saveProcessedButton);
-        buttons.add(firstRow);
-        buttons.add(secondRow);
-        buttons.add(thirdRow);
-        frame.add(buttons, BorderLayout.NORTH);
-        frame.add(new JScrollPane(imagePanel), BorderLayout.CENTER);
+        JScrollPane imageViewport = new JScrollPane(imagePanel);
+        imageViewport.getViewport().setBackground(Theme.IMAGE_BACKGROUND);
+        frame.add(imageViewport, BorderLayout.CENTER);
 
         information.setEditable(false);
         information.setLineWrap(true);
         information.setWrapStyleWord(true);
-        information.setBorder(BorderFactory.createTitledBorder("Image information"));
+        information.setFont(Theme.MONOSPACED_FONT);
+        information.setBackground(Theme.WINDOW_BACKGROUND);
+        information.setForeground(Theme.TEXT);
+        information.setCaretColor(Theme.TEXT);
+        information.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createTitledBorder("Image information"),
+                BorderFactory.createEmptyBorder(8, 8, 8, 8)));
         information.setText("Open a BMP, TIFF, or DICOM file to inspect it.");
         JScrollPane informationPane = new JScrollPane(information);
-        informationPane.setPreferredSize(new Dimension(260, 0));
+        informationPane.setPreferredSize(new Dimension(290, 0));
         frame.add(informationPane, BorderLayout.EAST);
+
+        frame.add(statusBar, BorderLayout.SOUTH);
+        imagePanel.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent event) {
+                refreshImageStatus();
+            }
+        });
+    }
+
+    private JMenuBar createMenuBar() {
+        JMenuBar menuBar = new JMenuBar();
+
+        JMenu file = new JMenu("File");
+        addMenuItem(file, "Open Image", this::openImage,
+                KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.CTRL_DOWN_MASK));
+        addMenuItem(file, "Save Processed", this::saveProcessed,
+                KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK));
+        addMenuItem(file, "Save Copy", this::saveCopy, null);
+        file.addSeparator();
+        addMenuItem(file, "Exit", frame::dispose, null);
+
+        JMenu edit = new JMenu("Edit");
+        addMenuItem(edit, "Undo", this::undoImage,
+                KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK));
+        addMenuItem(edit, "Reset", this::resetImage,
+                KeyStroke.getKeyStroke(KeyEvent.VK_R, InputEvent.CTRL_DOWN_MASK));
+
+        JMenu process = new JMenu("Process");
+        addMenuItem(process, "Grayscale", this::convertToGrayscale, null);
+        addMenuItem(process, "Brightness/Contrast", this::adjustBrightnessContrast, null);
+        addMenuItem(process, "Equalize", this::equalizeImage, null);
+        addMenuItem(process, "Filter", this::filterImage, null);
+        addMenuItem(process, "Sobel Edges", this::detectEdges, null);
+        addMenuItem(process, "Geometric Transform", this::transformImage, null);
+
+        JMenu analyze = new JMenu("Analyze");
+        addMenuItem(analyze, "Histogram", this::showHistogram, null);
+        addMenuItem(analyze, "Threshold", this::thresholdImage, null);
+        addMenuItem(analyze, "Analyze Regions", this::analyzeImage, null);
+
+        menuBar.add(file);
+        menuBar.add(edit);
+        menuBar.add(process);
+        menuBar.add(analyze);
+        return menuBar;
+    }
+
+    private JToolBar createToolbar() {
+        JToolBar toolbar = new JToolBar();
+        toolbar.setFloatable(false);
+        toolbar.setBackground(Theme.PANEL_BACKGROUND);
+        toolbar.setBorder(BorderFactory.createEmptyBorder(4, 6, 4, 6));
+
+        JButton open = createToolbarButton("Open", "Open an image", this::openImage);
+        JButton save = createToolbarButton(
+                "Save", "Save the processed image", this::saveProcessed);
+        JButton undo = createToolbarButton("Undo", "Undo the last image operation", this::undoImage);
+        JButton reset = createToolbarButton("Reset", "Restore the original image", this::resetImage);
+        imageToolbarButtons[0] = save;
+        imageToolbarButtons[1] = undo;
+        imageToolbarButtons[2] = reset;
+        save.setEnabled(false);
+        undo.setEnabled(false);
+        reset.setEnabled(false);
+        toolbar.add(open);
+        toolbar.add(save);
+        toolbar.add(undo);
+        toolbar.add(reset);
+        return toolbar;
+    }
+
+    private JButton createToolbarButton(String label, String tooltip, Runnable action) {
+        JButton button = new JButton(label);
+        button.setToolTipText(tooltip);
+        button.setBackground(Theme.PANEL_BACKGROUND);
+        button.setForeground(Theme.TEXT);
+        button.addActionListener(event -> action.run());
+        return button;
+    }
+
+    private static void addMenuItem(JMenu menu, String label, Runnable action,
+                                    KeyStroke accelerator) {
+        JMenuItem item = new JMenuItem(label);
+        item.addActionListener(event -> action.run());
+        if (accelerator != null) {
+            item.setAccelerator(accelerator);
+        }
+        menu.add(item);
     }
 
     public void show() {
@@ -163,11 +221,19 @@ public final class MainWindow {
             openedPath = selected;
             currentImage = loadedImage.getImage();
             originalImage = currentImage;
+            currentFormat = loadedImage.getFormatName();
             undoStack.clear();
             imagePanel.setImage(currentImage);
             information.setText(loadedImage.getDescription());
+            toolPanel.setToolsEnabled(true);
+            for (JButton button : imageToolbarButtons) {
+                button.setEnabled(true);
+            }
+            refreshImageStatus();
+            statusBar.setLastAction("Image opened");
         } catch (IOException exception) {
             information.setText("Could not open image:\n" + exception.getMessage());
+            statusBar.setLastAction("Open failed");
         }
     }
 
@@ -179,6 +245,7 @@ public final class MainWindow {
 
         updateCurrentImage(GrayscaleConverter.toGrayscale(currentImage));
         information.append("\n\nDisplayed image converted to grayscale.");
+        statusBar.setLastAction("Grayscale applied");
     }
 
     private void showHistogram() {
@@ -206,6 +273,7 @@ public final class MainWindow {
         dialog.pack();
         dialog.setLocationRelativeTo(frame);
         dialog.setVisible(true);
+        statusBar.setLastAction("Histogram displayed");
     }
 
     private void detectEdges() {
@@ -216,6 +284,7 @@ public final class MainWindow {
 
         updateCurrentImage(SobelEdgeDetector.detect(currentImage));
         information.append("\n\nApplied Sobel edge detection to the displayed image.");
+        statusBar.setLastAction("Sobel edges applied");
     }
 
     private void filterImage() {
@@ -265,8 +334,10 @@ public final class MainWindow {
 
             updateCurrentImage(filteredImage);
             information.append("\n\n" + appliedDetails + ".");
+            statusBar.setLastAction(filter + " filter applied");
         } catch (IllegalArgumentException exception) {
             information.append("\n\nCould not apply filter: " + exception.getMessage());
+            statusBar.setLastAction("Filter failed");
         }
     }
 
@@ -278,6 +349,7 @@ public final class MainWindow {
 
         updateCurrentImage(HistogramEqualizer.equalize(currentImage));
         information.append("\n\nApplied histogram equalization to the displayed image.");
+        statusBar.setLastAction("Histogram equalization applied");
     }
 
     private void thresholdImage() {
@@ -309,15 +381,18 @@ public final class MainWindow {
                 thresholdedImage = Thresholding.globalThreshold(currentImage, threshold);
                 updateCurrentImage(thresholdedImage);
                 information.append("\n\nApplied global thresholding with value " + threshold + ".");
+                statusBar.setLastAction("Global threshold applied");
             } else {
                 int threshold = Thresholding.calculateOtsuThreshold(currentImage);
                 information.append("\n\nCalculated Otsu threshold: " + threshold + ".");
                 thresholdedImage = Thresholding.globalThreshold(currentImage, threshold);
                 updateCurrentImage(thresholdedImage);
                 information.append("\nApplied Otsu thresholding.");
+                statusBar.setLastAction("Otsu threshold applied");
             }
         } catch (IllegalArgumentException exception) {
             information.append("\n\nCould not apply threshold: " + exception.getMessage());
+            statusBar.setLastAction("Threshold failed");
         }
     }
 
@@ -364,6 +439,7 @@ public final class MainWindow {
 
         updateCurrentImage(ConnectedComponents.colorize(labels));
         information.setText(report.toString());
+        statusBar.setLastAction("Regions analyzed");
     }
 
     private void resetImage() {
@@ -374,6 +450,7 @@ public final class MainWindow {
 
         updateCurrentImage(originalImage);
         information.append("\n\nRestored the original image.");
+        statusBar.setLastAction("Image reset");
     }
 
     private void undoImage() {
@@ -389,6 +466,8 @@ public final class MainWindow {
         currentImage = undoStack.pop();
         imagePanel.setImage(currentImage);
         information.append("\n\nUndid the last image operation.");
+        refreshImageStatus();
+        statusBar.setLastAction("Undo");
     }
 
     private void updateCurrentImage(BufferedImage image) {
@@ -400,6 +479,7 @@ public final class MainWindow {
         }
         currentImage = image;
         imagePanel.setImage(currentImage);
+        refreshImageStatus();
     }
 
     private void adjustBrightnessContrast() {
@@ -454,9 +534,12 @@ public final class MainWindow {
 
         if (!applied[0]) {
             imagePanel.setImage(original);
+            refreshImageStatus();
         } else {
             imagePanel.setImage(currentImage);
+            refreshImageStatus();
             information.append("\n\nApplied brightness and contrast adjustments.");
+            statusBar.setLastAction("Brightness/contrast applied");
         }
     }
 
@@ -530,6 +613,7 @@ public final class MainWindow {
         information.append("\n\nApplied geometric transformation: " + operation
                 + ".\nDisplayed dimensions: " + currentImage.getWidth() + " x "
                 + currentImage.getHeight());
+        statusBar.setLastAction(operation + " applied");
     }
 
     private void saveCopy() {
@@ -547,8 +631,10 @@ public final class MainWindow {
             Files.copy(openedPath, chooser.getSelectedFile().toPath(),
                     StandardCopyOption.REPLACE_EXISTING);
             information.append("\n\nCopy saved successfully.");
+            statusBar.setLastAction("Image copy saved");
         } catch (IOException exception) {
             information.append("\n\nCould not save copy: " + exception.getMessage());
+            statusBar.setLastAction("Save copy failed");
         }
     }
 
@@ -581,111 +667,22 @@ public final class MainWindow {
             if (!ImageIO.write(currentImage, format, selectedPath.toFile())) {
                 information.append("\n\nCould not save processed image: unsupported format \""
                         + format + "\".");
+                statusBar.setLastAction("Unsupported save format");
                 return;
             }
             information.append("\n\nProcessed image saved to " + selectedPath + ".");
+            statusBar.setLastAction("Processed image saved");
         } catch (IOException exception) {
             information.append("\n\nCould not save processed image: " + exception.getMessage());
+            statusBar.setLastAction("Save processed failed");
         }
     }
 
-    private static final class ImagePanel extends JPanel {
-        private static final long serialVersionUID = 1L;
-        private transient BufferedImage image;
-        private final JLabel placeholder = new JLabel("No image loaded", SwingConstants.CENTER);
-
-        private ImagePanel() {
-            setPreferredSize(new Dimension(700, 600));
-            add(placeholder);
+    private void refreshImageStatus() {
+        if (currentImage == null || currentFormat == null) {
+            return;
         }
-
-        private void setImage(BufferedImage image) {
-            this.image = image;
-            removeAll();
-            revalidate();
-            repaint();
-        }
-
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            if (image == null) {
-                return;
-            }
-            int availableWidth = Math.max(1, getWidth() - 20);
-            int availableHeight = Math.max(1, getHeight() - 20);
-            double scale = Math.min((double) availableWidth / image.getWidth(),
-                    (double) availableHeight / image.getHeight());
-            scale = Math.min(1.0, scale);
-            int width = Math.max(1, (int) (image.getWidth() * scale));
-            int height = Math.max(1, (int) (image.getHeight() * scale));
-            Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
-            graphics.drawImage(scaled, (getWidth() - width) / 2, (getHeight() - height) / 2, this);
-        }
-    }
-
-    private static final class HistogramPanel extends JPanel {
-        private static final long serialVersionUID = 1L;
-        private static final int LEFT_MARGIN = 58;
-        private static final int RIGHT_MARGIN = 18;
-        private static final int TOP_MARGIN = 20;
-        private static final int BOTTOM_MARGIN = 38;
-        private final long[] frequencies;
-        private final long maximumFrequency;
-
-        private HistogramPanel(long[] frequencies) {
-            this.frequencies = frequencies.clone();
-            long maximum = 0;
-            for (long frequency : frequencies) {
-                maximum = Math.max(maximum, frequency);
-            }
-            maximumFrequency = maximum;
-            setPreferredSize(new Dimension(680, 380));
-            setBackground(Color.WHITE);
-        }
-
-        @Override
-        protected void paintComponent(Graphics graphics) {
-            super.paintComponent(graphics);
-            Graphics2D graph = (Graphics2D) graphics.create();
-            graph.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
-                    RenderingHints.VALUE_ANTIALIAS_ON);
-
-            int plotWidth = getWidth() - LEFT_MARGIN - RIGHT_MARGIN;
-            int plotHeight = getHeight() - TOP_MARGIN - BOTTOM_MARGIN;
-            int plotBottom = TOP_MARGIN + plotHeight;
-            graph.setColor(new Color(225, 225, 225));
-            graph.drawLine(LEFT_MARGIN, TOP_MARGIN, LEFT_MARGIN, plotBottom);
-            graph.drawLine(LEFT_MARGIN, plotBottom, LEFT_MARGIN + plotWidth, plotBottom);
-
-            graph.setColor(new Color(230, 230, 230));
-            graph.drawLine(LEFT_MARGIN, TOP_MARGIN + plotHeight / 2,
-                    LEFT_MARGIN + plotWidth, TOP_MARGIN + plotHeight / 2);
-            graph.setColor(Color.DARK_GRAY);
-            graph.drawString(Long.toString(maximumFrequency), 6, TOP_MARGIN + 5);
-            graph.drawString("Intensity", LEFT_MARGIN + plotWidth / 2 - 25, getHeight() - 8);
-
-            FontMetrics metrics = graph.getFontMetrics();
-            int[] levels = {0, 64, 128, 192, 255};
-            for (int level : levels) {
-                int x = LEFT_MARGIN + (int) ((long) level * plotWidth / 255);
-                String label = Integer.toString(level);
-                graph.drawLine(x, plotBottom, x, plotBottom + 4);
-                graph.drawString(label, x - metrics.stringWidth(label) / 2, plotBottom + 18);
-            }
-
-            if (maximumFrequency > 0) {
-                graph.setColor(new Color(65, 105, 145));
-                for (int intensity = 0; intensity < frequencies.length; intensity++) {
-                    int x1 = LEFT_MARGIN + (int) ((long) intensity * plotWidth / 256);
-                    int x2 = LEFT_MARGIN + (int) ((long) (intensity + 1) * plotWidth / 256);
-                    int barHeight = (int) ((double) frequencies[intensity] / maximumFrequency
-                            * plotHeight);
-                    graph.fillRect(x1, plotBottom - barHeight,
-                            Math.max(1, x2 - x1), barHeight);
-                }
-            }
-            graph.dispose();
-        }
+        statusBar.setImageStatus(currentImage.getWidth(), currentImage.getHeight(),
+                currentFormat, imagePanel.getZoomPercent());
     }
 }

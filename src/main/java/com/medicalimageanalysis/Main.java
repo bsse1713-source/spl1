@@ -1,6 +1,7 @@
 package com.medicalimageanalysis;
 
 import com.medicalimageanalysis.ui.MainWindow;
+import com.medicalimageanalysis.ui.Theme;
 
 import javax.swing.SwingUtilities;
 
@@ -9,6 +10,9 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> new MainWindow().show());
+        SwingUtilities.invokeLater(() -> {
+            Theme.apply();
+            new MainWindow().show();
+        });
     }
 }
