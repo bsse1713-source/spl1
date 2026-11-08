@@ -5,12 +5,8 @@ import com.medicalimageanalysis.analysis.ImageStatistics;
 import com.medicalimageanalysis.analysis.RegionAnalyzer;
 import com.medicalimageanalysis.analysis.RegionFeature;
 import com.medicalimageanalysis.analysis.Thresholding;
-import com.medicalimageanalysis.io.BmpReader;
-import com.medicalimageanalysis.io.DicomReader;
-import com.medicalimageanalysis.io.TiffReader;
-import com.medicalimageanalysis.model.BmpImage;
-import com.medicalimageanalysis.model.DicomImage;
-import com.medicalimageanalysis.model.TiffImage;
+import com.medicalimageanalysis.io.ImageLoader;
+import com.medicalimageanalysis.io.LoadedImage;
 import com.medicalimageanalysis.processing.BrightnessContrastAdjuster;
 import com.medicalimageanalysis.processing.GaussianFilter;
 import com.medicalimageanalysis.processing.GeometricTransformer;
@@ -26,6 +22,7 @@ import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
@@ -61,9 +58,6 @@ public final class MainWindow {
     private final JFrame frame = new JFrame("Medical Image Analysis System");
     private final ImagePanel imagePanel = new ImagePanel();
     private final JTextArea information = new JTextArea();
-    private final BmpReader bmpReader = new BmpReader();
-    private final DicomReader dicomReader = new DicomReader();
-    private final TiffReader tiffReader = new TiffReader();
     private final Deque<BufferedImage> undoStack = new ArrayDeque<>();
     private Path openedPath;
     private BufferedImage currentImage;
@@ -74,14 +68,8 @@ public final class MainWindow {
         frame.setSize(1000, 700);
         frame.setLocationByPlatform(true);
 
-        JButton openBmpButton = new JButton("Open BMP");
-        openBmpButton.addActionListener(event -> openBmp());
-
-        JButton openTiffButton = new JButton("Open TIFF");
-        openTiffButton.addActionListener(event -> openTiff());
-
-        JButton openDicomButton = new JButton("Open DICOM");
-        openDicomButton.addActionListener(event -> openDicom());
+        JButton openImageButton = new JButton("Open Image");
+        openImageButton.addActionListener(event -> openImage());
 
         JButton grayscaleButton = new JButton("Grayscale");
         grayscaleButton.addActionListener(event -> convertToGrayscale());
@@ -124,9 +112,7 @@ public final class MainWindow {
 
         JPanel buttons = new JPanel(new GridLayout(3, 1, 0, 0));
         JPanel firstRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        firstRow.add(openBmpButton);
-        firstRow.add(openTiffButton);
-        firstRow.add(openDicomButton);
+        firstRow.add(openImageButton);
         firstRow.add(grayscaleButton);
         firstRow.add(sobelButton);
         JPanel secondRow = new JPanel(new FlowLayout(FlowLayout.LEFT));
@@ -162,63 +148,26 @@ public final class MainWindow {
         frame.setVisible(true);
     }
 
-    private void openBmp() {
+    private void openImage() {
         JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Open BMP image");
+        chooser.setDialogTitle("Open image");
+        chooser.setAcceptAllFileFilterUsed(true);
+        chooser.setFileFilter(new FileNameExtensionFilter(
+                "Medical images", "bmp", "tif", "tiff", "dcm"));
         if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
             return;
         }
         try {
             Path selected = chooser.getSelectedFile().toPath();
-            BmpImage image = bmpReader.read(selected);
+            LoadedImage loadedImage = ImageLoader.load(selected);
             openedPath = selected;
-            currentImage = image.toBufferedImage();
+            currentImage = loadedImage.getImage();
             originalImage = currentImage;
             undoStack.clear();
             imagePanel.setImage(currentImage);
-            information.setText(formatInformation(image));
+            information.setText(loadedImage.getDescription());
         } catch (IOException exception) {
-            information.setText("Could not open BMP:\n" + exception.getMessage());
-        }
-    }
-
-    private void openTiff() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Open TIFF image");
-        if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
-            return;
-        }
-        try {
-            Path selected = chooser.getSelectedFile().toPath();
-            TiffImage image = tiffReader.read(selected);
-            openedPath = selected;
-            currentImage = image.toBufferedImage();
-            originalImage = currentImage;
-            undoStack.clear();
-            imagePanel.setImage(currentImage);
-            information.setText(formatInformation(image));
-        } catch (IOException exception) {
-            information.setText("Could not open TIFF:\n" + exception.getMessage());
-        }
-    }
-
-    private void openDicom() {
-        JFileChooser chooser = new JFileChooser();
-        chooser.setDialogTitle("Open DICOM image");
-        if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
-            return;
-        }
-        try {
-            Path selected = chooser.getSelectedFile().toPath();
-            DicomImage image = dicomReader.read(selected);
-            openedPath = selected;
-            currentImage = image.toBufferedImage();
-            originalImage = currentImage;
-            undoStack.clear();
-            imagePanel.setImage(currentImage);
-            information.setText(formatInformation(image));
-        } catch (IOException exception) {
-            information.setText("Could not open DICOM:\n" + exception.getMessage());
+            information.setText("Could not open image:\n" + exception.getMessage());
         }
     }
 
@@ -638,42 +587,6 @@ public final class MainWindow {
         } catch (IOException exception) {
             information.append("\n\nCould not save processed image: " + exception.getMessage());
         }
-    }
-
-    private static String formatInformation(BmpImage image) {
-        return "Format: BMP"
-                + "\nWidth: " + image.getWidth()
-                + "\nHeight: " + image.getHeight()
-                + "\nBits per pixel: " + image.getBitsPerPixel()
-                + "\nFile size from header: " + image.getFileSize() + " bytes"
-                + "\nPixel data offset: " + image.getPixelDataOffset() + " bytes";
-    }
-
-    private static String formatInformation(TiffImage image) {
-        return "Format: TIFF"
-                + "\nWidth: " + image.getWidth()
-                + "\nHeight: " + image.getHeight()
-                + "\nBits per sample: " + image.getBitsPerSample()
-                + "\nSamples per pixel: " + image.getSamplesPerPixel()
-                + "\nByte order: " + image.getByteOrder();
-    }
-
-    private static String formatInformation(DicomImage image) {
-        String window = Double.isFinite(image.getWindowCenter())
-                && Double.isFinite(image.getWindowWidth())
-                ? image.getWindowCenter() + " / " + image.getWindowWidth()
-                : "Not specified (using data min/max)";
-        return "Format: DICOM"
-                + "\nPatient name: " + image.getPatientName()
-                + "\nPatient ID: " + image.getPatientId()
-                + "\nModality: " + image.getModality()
-                + "\nStudy date: " + image.getStudyDate()
-                + "\nWidth: " + image.getWidth()
-                + "\nHeight: " + image.getHeight()
-                + "\nBits allocated: " + image.getBitsAllocated()
-                + "\nWindow center / width: " + window
-                + "\nRescale slope: " + image.getRescaleSlope()
-                + "\nRescale intercept: " + image.getRescaleIntercept();
     }
 
     private static final class ImagePanel extends JPanel {
