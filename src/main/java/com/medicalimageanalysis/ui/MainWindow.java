@@ -20,6 +20,7 @@ import com.medicalimageanalysis.processing.SobelEdgeDetector;
 import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
+import javax.swing.JCheckBoxMenuItem;
 import javax.swing.JDialog;
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -33,12 +34,16 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSlider;
 import javax.swing.JTextArea;
+import javax.swing.JToggleButton;
 import javax.swing.JToolBar;
+import javax.swing.TransferHandler;
 import javax.swing.KeyStroke;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.GridLayout;
 import java.awt.image.BufferedImage;
+import java.awt.datatransfer.DataFlavor;
+import java.awt.datatransfer.Transferable;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.ComponentAdapter;
@@ -72,6 +77,8 @@ public final class MainWindow {
             this::analyzeImage);
     private final StatusBar statusBar = new StatusBar();
     private final JButton[] imageToolbarButtons = new JButton[3];
+    private JCheckBoxMenuItem compareMenuItem;
+    private JToggleButton compareToolbarButton;
     private Path openedPath;
     private BufferedImage currentImage;
     private BufferedImage originalImage;
@@ -96,6 +103,13 @@ public final class MainWindow {
         JScrollPane imageViewport = new JScrollPane(imagePanel);
         imageViewport.getViewport().setBackground(Theme.IMAGE_BACKGROUND);
         frame.add(imageViewport, BorderLayout.CENTER);
+        TransferHandler imageDropHandler = createImageDropHandler();
+        frame.setTransferHandler(imageDropHandler);
+        imagePanel.setTransferHandler(imageDropHandler);
+        imageViewport.setTransferHandler(imageDropHandler);
+
+        imagePanel.setPixelInfoListener(statusBar::setPixelInfo);
+        imagePanel.setZoomListener(statusBar::setZoomPercent);
 
         information.setEditable(false);
         information.setLineWrap(true);
@@ -152,10 +166,17 @@ public final class MainWindow {
         addMenuItem(analyze, "Threshold", this::thresholdImage, null);
         addMenuItem(analyze, "Analyze Regions", this::analyzeImage, null);
 
+        JMenu view = new JMenu("View");
+        compareMenuItem = new JCheckBoxMenuItem("Compare Original / Processed");
+        compareMenuItem.setEnabled(false);
+        compareMenuItem.addActionListener(event -> setCompareView(compareMenuItem.isSelected()));
+        view.add(compareMenuItem);
+
         menuBar.add(file);
         menuBar.add(edit);
         menuBar.add(process);
         menuBar.add(analyze);
+        menuBar.add(view);
         return menuBar;
     }
 
@@ -170,6 +191,13 @@ public final class MainWindow {
                 "Save", "Save the processed image", this::saveProcessed);
         JButton undo = createToolbarButton("Undo", "Undo the last image operation", this::undoImage);
         JButton reset = createToolbarButton("Reset", "Restore the original image", this::resetImage);
+        compareToolbarButton = new JToggleButton("Compare");
+        compareToolbarButton.setToolTipText("Show original and processed images side by side");
+        compareToolbarButton.setBackground(Theme.PANEL_BACKGROUND);
+        compareToolbarButton.setForeground(Theme.TEXT);
+        compareToolbarButton.setEnabled(false);
+        compareToolbarButton.addActionListener(
+                event -> setCompareView(compareToolbarButton.isSelected()));
         imageToolbarButtons[0] = save;
         imageToolbarButtons[1] = undo;
         imageToolbarButtons[2] = reset;
@@ -180,6 +208,7 @@ public final class MainWindow {
         toolbar.add(save);
         toolbar.add(undo);
         toolbar.add(reset);
+        toolbar.add(compareToolbarButton);
         return toolbar;
     }
 
@@ -215,26 +244,85 @@ public final class MainWindow {
         if (chooser.showOpenDialog(frame) != JFileChooser.APPROVE_OPTION) {
             return;
         }
+        openImage(chooser.getSelectedFile().toPath(), false);
+    }
+
+    private void openImage(Path selected, boolean dropped) {
         try {
-            Path selected = chooser.getSelectedFile().toPath();
             LoadedImage loadedImage = ImageLoader.load(selected);
             openedPath = selected;
             currentImage = loadedImage.getImage();
             originalImage = currentImage;
             currentFormat = loadedImage.getFormatName();
             undoStack.clear();
-            imagePanel.setImage(currentImage);
+            imagePanel.setImages(originalImage, currentImage);
+            imagePanel.resetToFit();
             information.setText(loadedImage.getDescription());
             toolPanel.setToolsEnabled(true);
             for (JButton button : imageToolbarButtons) {
                 button.setEnabled(true);
             }
+            compareToolbarButton.setEnabled(true);
+            compareMenuItem.setEnabled(true);
+            statusBar.setPixelInfo("");
             refreshImageStatus();
-            statusBar.setLastAction("Image opened");
+            statusBar.setLastAction(dropped ? "Dropped image opened" : "Image opened");
         } catch (IOException exception) {
-            information.setText("Could not open image:\n" + exception.getMessage());
+            information.setText((dropped ? "Could not open dropped image:\n"
+                    : "Could not open image:\n") + exception.getMessage());
             statusBar.setLastAction("Open failed");
         }
+    }
+
+    private TransferHandler createImageDropHandler() {
+        return new TransferHandler() {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            public boolean canImport(TransferSupport support) {
+                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+            }
+
+            @Override
+            public boolean importData(TransferSupport support) {
+                if (!canImport(support)) {
+                    information.setText("Drop an image file to open it.");
+                    return false;
+                }
+                try {
+                    Transferable transferable = support.getTransferable();
+                    Object data = transferable.getTransferData(DataFlavor.javaFileListFlavor);
+                    if (!(data instanceof List<?>)) {
+                        information.setText("Could not open dropped image: invalid file drop.");
+                        return false;
+                    }
+                    List<?> files = (List<?>) data;
+                    if (files.isEmpty() || !(files.get(0) instanceof File)) {
+                        information.setText("Could not open dropped image: no file was provided.");
+                        return false;
+                    }
+                    openImage(((File) files.get(0)).toPath(), true);
+                    return true;
+                } catch (java.awt.datatransfer.UnsupportedFlavorException
+                         | IOException exception) {
+                    information.setText("Could not open dropped image: " + exception.getMessage());
+                    statusBar.setLastAction("Open failed");
+                    return false;
+                }
+            }
+        };
+    }
+
+    private void setCompareView(boolean enabled) {
+        imagePanel.setComparing(enabled);
+        if (compareMenuItem != null) {
+            compareMenuItem.setSelected(enabled);
+        }
+        if (compareToolbarButton != null) {
+            compareToolbarButton.setSelected(enabled);
+        }
+        statusBar.setLastAction(enabled ? "Before/after comparison enabled"
+                : "Before/after comparison disabled");
     }
 
     private void convertToGrayscale() {
@@ -464,7 +552,7 @@ public final class MainWindow {
         }
 
         currentImage = undoStack.pop();
-        imagePanel.setImage(currentImage);
+        imagePanel.setImages(originalImage, currentImage);
         information.append("\n\nUndid the last image operation.");
         refreshImageStatus();
         statusBar.setLastAction("Undo");
@@ -478,7 +566,7 @@ public final class MainWindow {
             undoStack.push(currentImage);
         }
         currentImage = image;
-        imagePanel.setImage(currentImage);
+        imagePanel.setImages(originalImage, currentImage);
         refreshImageStatus();
     }
 
@@ -503,7 +591,8 @@ public final class MainWindow {
             double contrast = contrastSlider.getValue() / 100.0;
             brightnessLabel.setText("Brightness: " + brightness);
             contrastLabel.setText(String.format("Contrast: %.2f", contrast));
-            imagePanel.setImage(BrightnessContrastAdjuster.adjust(original, brightness, contrast));
+            imagePanel.setImages(originalImage,
+                    BrightnessContrastAdjuster.adjust(original, brightness, contrast));
         };
         brightnessSlider.addChangeListener(event -> updatePreview.run());
         contrastSlider.addChangeListener(event -> updatePreview.run());
@@ -533,10 +622,10 @@ public final class MainWindow {
         dialog.setVisible(true);
 
         if (!applied[0]) {
-            imagePanel.setImage(original);
+            imagePanel.setImages(originalImage, original);
             refreshImageStatus();
         } else {
-            imagePanel.setImage(currentImage);
+            imagePanel.setImages(originalImage, currentImage);
             refreshImageStatus();
             information.append("\n\nApplied brightness and contrast adjustments.");
             statusBar.setLastAction("Brightness/contrast applied");
