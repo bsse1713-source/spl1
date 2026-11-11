@@ -22,7 +22,7 @@ custom image models and displayed with Swing. DICOM row and column pixel
 spacing, when present and valid, is retained in the DICOM image model for
 analysis and shown in the image information panel; unavailable spacing is not
 replaced with a default. Region analysis preserves pixel-area counts and also
-reports physical area in mm^2 when valid row and column spacing are available.
+reports physical area in mm² when valid row and column spacing are available.
 Use the Grayscale button to convert a displayed image to
 grayscale using weighted luminance; alpha is preserved and the source file
 remains unchanged. Use Geometric Transform to rotate, scale, translate, or

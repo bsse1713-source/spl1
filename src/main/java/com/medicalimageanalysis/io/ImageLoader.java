@@ -102,18 +102,17 @@ public final class ImageLoader {
                 + "\nStudy date: " + image.getStudyDate()
                 + "\nWidth: " + image.getWidth()
                 + "\nHeight: " + image.getHeight()
-                + "\nPixel spacing row (mm): " + formatPixelSpacing(image.getPixelSpacingRow())
-                + "\nPixel spacing column (mm): "
-                + formatPixelSpacing(image.getPixelSpacingColumn())
+                + "\nPixel spacing (row × column, mm): " + formatPixelSpacing(image)
                 + "\nBits allocated: " + image.getBitsAllocated()
                 + "\nWindow center / width: " + window
                 + "\nRescale slope: " + image.getRescaleSlope()
                 + "\nRescale intercept: " + image.getRescaleIntercept();
     }
 
-    private static String formatPixelSpacing(double spacing) {
-        return Double.isFinite(spacing) && spacing > 0
-                ? Double.toString(spacing) : "Unavailable (missing or invalid)";
+    private static String formatPixelSpacing(DicomImage image) {
+        return image.hasPixelSpacing()
+                ? image.getPixelSpacingRow() + " × " + image.getPixelSpacingColumn()
+                : "Unavailable (missing or invalid)";
     }
 
     private enum Format {

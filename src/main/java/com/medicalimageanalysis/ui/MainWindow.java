@@ -517,7 +517,7 @@ public final class MainWindow {
                         + "\nShannon entropy: %.3f bits", mean, standardDeviation, entropy))
                 .append("\n\nFirst ").append(Math.min(10, regions.size()))
                 .append(" regions (label, pixel area, physical area, centroid, bounds, mean intensity):")
-                .append("\nLabel | Pixel area | Physical area (mm^2) | Centroid (x, y) "
+                .append("\nLabel | Pixel area | Physical area (mm²) | Centroid (x, y) "
                         + "| Bounds (minX, minY - maxX, maxY) | Mean");
 
         if (regions.isEmpty()) {
