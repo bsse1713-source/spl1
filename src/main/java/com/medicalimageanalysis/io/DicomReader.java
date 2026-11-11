@@ -38,17 +38,24 @@ public final class DicomReader {
             String patientId = "";
             String modality = "";
             String studyDate = "";
+            String manufacturer = "";
+            String studyDescription = "";
+            String sliceThickness = "";
             String photometricInterpretation = "";
             double windowCenter = Double.NaN;
             double windowWidth = Double.NaN;
             double rescaleSlope = 1.0;
             double rescaleIntercept = 0.0;
+            double pixelSpacingRow = 0.0;
+            double pixelSpacingColumn = 0.0;
             int rows = 0;
             int columns = 0;
             int bitsAllocated = 0;
+            int bitsStored = 0;
             int pixelRepresentation = 0;
             int samplesPerPixel = 1;
             int numberOfFrames = 1;
+            java.util.Map<String, String> metadata = new java.util.LinkedHashMap<>();
 
             while (file.getFilePointer() < fileLength) {
                 ensureRemaining(file, fileLength, 8, "DICOM data element header");
@@ -81,18 +88,58 @@ public final class DicomReader {
                             && !IMPLICIT_VR_LITTLE_ENDIAN.equals(transferSyntaxUid)) {
                         throw unsupported("transfer syntax " + transferSyntaxUid);
                     }
+                    if (!transferSyntaxUid.isEmpty()) {
+                        metadata.put("Transfer Syntax UID", transferSyntaxUid);
+                    }
                 } else if (group == 0x0010 && element == 0x0010) {
                     patientName = readText(file, valueLength);
                 } else if (group == 0x0010 && element == 0x0020) {
                     patientId = readText(file, valueLength);
                 } else if (group == 0x0008 && element == 0x0060) {
                     modality = readText(file, valueLength);
+                    if (!modality.isEmpty()) {
+                        metadata.put("Modality", modality);
+                    }
                 } else if (group == 0x0008 && element == 0x0020) {
                     studyDate = readText(file, valueLength);
+                    if (!studyDate.isEmpty()) {
+                        metadata.put("Study Date", studyDate);
+                    }
+                } else if (group == 0x0008 && element == 0x0070) {
+                    manufacturer = readText(file, valueLength);
+                    if (!manufacturer.isEmpty()) {
+                        metadata.put("Manufacturer", manufacturer);
+                    }
+                } else if (group == 0x0008 && element == 0x1030) {
+                    studyDescription = readText(file, valueLength);
+                    if (!studyDescription.isEmpty()) {
+                        metadata.put("Study Description", studyDescription);
+                    }
+                } else if (group == 0x0018 && element == 0x0050) {
+                    sliceThickness = readText(file, valueLength);
+                    if (!sliceThickness.isEmpty()) {
+                        metadata.put("Slice Thickness (mm)", sliceThickness);
+                    }
+                } else if (group == 0x0028 && element == 0x0030) {
+                    String pixelSpacingValue = readText(file, valueLength);
+                    if (!pixelSpacingValue.isEmpty()) {
+                        metadata.put("Pixel Spacing (mm)", pixelSpacingValue);
+                        String[] parts = pixelSpacingValue.split("\\\\");
+                        if (parts.length > 0) {
+                            pixelSpacingRow = parseDecimal(parts[0], "PixelSpacingRow");
+                        }
+                        if (parts.length > 1) {
+                            pixelSpacingColumn = parseDecimal(parts[1], "PixelSpacingColumn");
+                        }
+                    }
                 } else if (group == 0x0028 && element == 0x0002) {
                     samplesPerPixel = readUnsignedShortValue(file, valueLength);
+                    metadata.put("Samples Per Pixel", String.valueOf(samplesPerPixel));
                 } else if (group == 0x0028 && element == 0x0004) {
                     photometricInterpretation = readText(file, valueLength);
+                    if (!photometricInterpretation.isEmpty()) {
+                        metadata.put("Photometric Interpretation", photometricInterpretation);
+                    }
                 } else if (group == 0x0028 && element == 0x0008) {
                     numberOfFrames = parseInteger(readText(file, valueLength), "NumberOfFrames");
                 } else if (group == 0x0028 && element == 0x0010) {
@@ -101,6 +148,9 @@ public final class DicomReader {
                     columns = readUnsignedShortValue(file, valueLength);
                 } else if (group == 0x0028 && element == 0x0100) {
                     bitsAllocated = readUnsignedShortValue(file, valueLength);
+                } else if (group == 0x0028 && element == 0x0101) {
+                    bitsStored = readUnsignedShortValue(file, valueLength);
+                    metadata.put("Bits Stored", String.valueOf(bitsStored));
                 } else if (group == 0x0028 && element == 0x0103) {
                     pixelRepresentation = readUnsignedShortValue(file, valueLength);
                 } else if (group == 0x0028 && element == 0x1050) {
@@ -119,7 +169,8 @@ public final class DicomReader {
                             rescaleSlope, rescaleIntercept, fileLength);
                     return new DicomImage(columns, rows, bitsAllocated, pixelRepresentation,
                             patientName, patientId, modality, studyDate, windowCenter,
-                            windowWidth, rescaleSlope, rescaleIntercept, transferSyntaxUid, pixels);
+                            windowWidth, rescaleSlope, rescaleIntercept, transferSyntaxUid, pixels,
+                            pixelSpacingRow, pixelSpacingColumn, bitsStored, samplesPerPixel, metadata);
                 } else {
                     file.seek(file.getFilePointer() + valueLength);
                 }
