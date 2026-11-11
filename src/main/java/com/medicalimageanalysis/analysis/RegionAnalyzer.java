@@ -15,6 +15,12 @@ public final class RegionAnalyzer {
     }
 
     public static List<RegionFeature> analyze(int[][] labels, BufferedImage original, int minimumArea) {
+        return analyze(labels, original, minimumArea, Double.NaN, Double.NaN);
+    }
+
+    public static List<RegionFeature> analyze(int[][] labels, BufferedImage original,
+                                              int minimumArea, double pixelSpacingRow,
+                                              double pixelSpacingColumn) {
         Objects.requireNonNull(original, "original");
         if (minimumArea < 1) {
             throw new IllegalArgumentException("Minimum area must be at least 1.");
@@ -53,7 +59,8 @@ public final class RegionAnalyzer {
         for (java.util.Map.Entry<Integer, Accumulator> entry : regions.entrySet()) {
             Accumulator region = entry.getValue();
             if (region.area >= minimumArea) {
-                features.add(region.toFeature(entry.getKey()));
+                features.add(region.toFeature(entry.getKey(), pixelSpacingRow,
+                        pixelSpacingColumn));
             }
         }
         return List.copyOf(features);
@@ -106,10 +113,19 @@ public final class RegionAnalyzer {
             sumIntensity += intensity;
         }
 
-        private RegionFeature toFeature(int label) {
+        private RegionFeature toFeature(int label, double pixelSpacingRow,
+                                        double pixelSpacingColumn) {
+            double physicalAreaMm2 = Double.NaN;
+            if (Double.isFinite(pixelSpacingRow) && pixelSpacingRow > 0
+                    && Double.isFinite(pixelSpacingColumn) && pixelSpacingColumn > 0) {
+                double calculatedArea = area * pixelSpacingRow * pixelSpacingColumn;
+                if (Double.isFinite(calculatedArea) && calculatedArea > 0) {
+                    physicalAreaMm2 = calculatedArea;
+                }
+            }
             return new RegionFeature(label, area, minX, minY, maxX, maxY,
                     (double) sumX / area, (double) sumY / area,
-                    (double) sumIntensity / area);
+                    (double) sumIntensity / area, physicalAreaMm2);
         }
     }
 }

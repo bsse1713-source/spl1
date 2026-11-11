@@ -7,6 +7,7 @@ import com.medicalimageanalysis.analysis.RegionFeature;
 import com.medicalimageanalysis.analysis.Thresholding;
 import com.medicalimageanalysis.io.ImageLoader;
 import com.medicalimageanalysis.io.LoadedImage;
+import com.medicalimageanalysis.model.DicomImage;
 import com.medicalimageanalysis.processing.BrightnessContrastAdjuster;
 import com.medicalimageanalysis.processing.GaussianFilter;
 import com.medicalimageanalysis.processing.GeometricTransformer;
@@ -83,6 +84,7 @@ public final class MainWindow {
     private BufferedImage currentImage;
     private BufferedImage originalImage;
     private String currentFormat;
+    private DicomImage currentDicomImage;
 
     public MainWindow() {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -254,6 +256,7 @@ public final class MainWindow {
             currentImage = loadedImage.getImage();
             originalImage = currentImage;
             currentFormat = loadedImage.getFormatName();
+            currentDicomImage = loadedImage.getDicomImage().orElse(null);
             undoStack.clear();
             imagePanel.setImages(originalImage, currentImage);
             imagePanel.resetToFit();
@@ -493,7 +496,12 @@ public final class MainWindow {
         BufferedImage source = currentImage;
         BufferedImage binaryImage = Thresholding.otsuThreshold(source);
         int[][] labels = ConnectedComponents.label(binaryImage);
-        List<RegionFeature> regions = RegionAnalyzer.analyze(labels, source);
+        double pixelSpacingRow = currentDicomImage == null
+                ? Double.NaN : currentDicomImage.getPixelSpacingRow();
+        double pixelSpacingColumn = currentDicomImage == null
+                ? Double.NaN : currentDicomImage.getPixelSpacingColumn();
+        List<RegionFeature> regions = RegionAnalyzer.analyze(labels, source, 1,
+                pixelSpacingRow, pixelSpacingColumn);
         int minimum = ImageStatistics.min(source);
         int maximum = ImageStatistics.max(source);
         double mean = ImageStatistics.mean(source);
@@ -508,17 +516,22 @@ public final class MainWindow {
                 .append(String.format(Locale.ROOT, "\nMean: %.2f  Standard deviation: %.2f"
                         + "\nShannon entropy: %.3f bits", mean, standardDeviation, entropy))
                 .append("\n\nFirst ").append(Math.min(10, regions.size()))
-                .append(" regions (label, area, centroid, bounds, mean intensity):")
-                .append("\nLabel | Area | Centroid (x, y) | Bounds (minX, minY - maxX, maxY) | Mean");
+                .append(" regions (label, pixel area, physical area, centroid, bounds, mean intensity):")
+                .append("\nLabel | Pixel area | Physical area (mm^2) | Centroid (x, y) "
+                        + "| Bounds (minX, minY - maxX, maxY) | Mean");
 
         if (regions.isEmpty()) {
             report.append("\nNo foreground regions found.");
         } else {
             for (int i = 0; i < Math.min(10, regions.size()); i++) {
                 RegionFeature region = regions.get(i);
-                report.append(String.format(Locale.ROOT, "\n%d | %d | (%.2f, %.2f) | "
+                String physicalArea = region.hasPhysicalAreaMm2()
+                        ? String.format(Locale.ROOT, "%.4f", region.getPhysicalAreaMm2())
+                        : "Unavailable";
+                report.append(String.format(Locale.ROOT, "\n%d | %d | %s | (%.2f, %.2f) | "
                                 + "(%d, %d - %d, %d) | %.2f",
                         region.getLabel(), region.getArea(),
+                        physicalArea,
                         region.getCentroidX(), region.getCentroidY(),
                         region.getMinX(), region.getMinY(), region.getMaxX(), region.getMaxY(),
                         region.getMeanIntensity()));
