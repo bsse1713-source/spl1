@@ -29,7 +29,7 @@ public final class ImageLoader {
         }
 
         DicomImage image = new DicomReader().read(path);
-        return new LoadedImage(image.toBufferedImage(), "DICOM", formatInformation(image));
+        return new LoadedImage(image.toBufferedImage(), "DICOM", formatInformation(image), image);
     }
 
     private static Format detectFormat(Path path) throws IOException {
@@ -102,10 +102,18 @@ public final class ImageLoader {
                 + "\nStudy date: " + image.getStudyDate()
                 + "\nWidth: " + image.getWidth()
                 + "\nHeight: " + image.getHeight()
+                + "\nPixel spacing row (mm): " + formatPixelSpacing(image.getPixelSpacingRow())
+                + "\nPixel spacing column (mm): "
+                + formatPixelSpacing(image.getPixelSpacingColumn())
                 + "\nBits allocated: " + image.getBitsAllocated()
                 + "\nWindow center / width: " + window
                 + "\nRescale slope: " + image.getRescaleSlope()
                 + "\nRescale intercept: " + image.getRescaleIntercept();
+    }
+
+    private static String formatPixelSpacing(double spacing) {
+        return Double.isFinite(spacing) && spacing > 0
+                ? Double.toString(spacing) : "Unavailable (missing or invalid)";
     }
 
     private enum Format {

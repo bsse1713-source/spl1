@@ -46,8 +46,8 @@ public final class DicomReader {
             double windowWidth = Double.NaN;
             double rescaleSlope = 1.0;
             double rescaleIntercept = 0.0;
-            double pixelSpacingRow = 0.0;
-            double pixelSpacingColumn = 0.0;
+            double pixelSpacingRow = Double.NaN;
+            double pixelSpacingColumn = Double.NaN;
             int rows = 0;
             int columns = 0;
             int bitsAllocated = 0;
@@ -124,12 +124,10 @@ public final class DicomReader {
                     String pixelSpacingValue = readText(file, valueLength);
                     if (!pixelSpacingValue.isEmpty()) {
                         metadata.put("Pixel Spacing (mm)", pixelSpacingValue);
-                        String[] parts = pixelSpacingValue.split("\\\\");
-                        if (parts.length > 0) {
-                            pixelSpacingRow = parseDecimal(parts[0], "PixelSpacingRow");
-                        }
-                        if (parts.length > 1) {
-                            pixelSpacingColumn = parseDecimal(parts[1], "PixelSpacingColumn");
+                        String[] parts = pixelSpacingValue.split("\\\\", -1);
+                        if (parts.length == 2) {
+                            pixelSpacingRow = parsePixelSpacing(parts[0]);
+                            pixelSpacingColumn = parsePixelSpacing(parts[1]);
                         }
                     }
                 } else if (group == 0x0028 && element == 0x0002) {
@@ -240,6 +238,15 @@ public final class DicomReader {
             return parsed;
         } catch (NumberFormatException exception) {
             throw new IOException("Invalid DICOM " + name + " value.", exception);
+        }
+    }
+
+    private static double parsePixelSpacing(String value) {
+        try {
+            double spacing = Double.parseDouble(value.trim());
+            return Double.isFinite(spacing) && spacing > 0 ? spacing : Double.NaN;
+        } catch (NumberFormatException exception) {
+            return Double.NaN;
         }
     }
 

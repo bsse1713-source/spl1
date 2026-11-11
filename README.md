@@ -18,7 +18,10 @@ uncompressed single-frame grayscale DICOM files with 8- or 16-bit pixels using
 Explicit or Implicit VR Little Endian transfer syntax. Compressed, color, and
 multi-frame DICOM images are not supported. No external image library is
 required; the first image in a TIFF file is opened. Images are converted into
-custom image models and displayed with Swing.
+custom image models and displayed with Swing. DICOM row and column pixel
+spacing, when present and valid, is retained in the DICOM image model for
+analysis and shown in the image information panel; unavailable spacing is not
+replaced with a default.
 Use the Grayscale button to convert a displayed image to
 grayscale using weighted luminance; alpha is preserved and the source file
 remains unchanged. Use Geometric Transform to rotate, scale, translate, or

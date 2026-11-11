@@ -45,8 +45,10 @@ public final class DicomImage {
         this.rescaleSlope = rescaleSlope;
         this.rescaleIntercept = rescaleIntercept;
         this.transferSyntaxUid = transferSyntaxUid;
-        this.pixelSpacingRow = pixelSpacingRow;
-        this.pixelSpacingColumn = pixelSpacingColumn;
+        this.pixelSpacingRow = validPixelSpacing(pixelSpacingRow)
+                ? pixelSpacingRow : Double.NaN;
+        this.pixelSpacingColumn = validPixelSpacing(pixelSpacingColumn)
+                ? pixelSpacingColumn : Double.NaN;
         this.bitsStored = bitsStored;
         this.samplesPerPixel = samplesPerPixel;
         this.metadata = Collections.unmodifiableMap(new java.util.LinkedHashMap<>(metadata));
@@ -68,9 +70,16 @@ public final class DicomImage {
     public String getTransferSyntaxUid() { return transferSyntaxUid; }
     public double getPixelSpacingRow() { return pixelSpacingRow; }
     public double getPixelSpacingColumn() { return pixelSpacingColumn; }
+    public boolean hasPixelSpacingRow() { return Double.isFinite(pixelSpacingRow); }
+    public boolean hasPixelSpacingColumn() { return Double.isFinite(pixelSpacingColumn); }
+    public boolean hasPixelSpacing() { return hasPixelSpacingRow() && hasPixelSpacingColumn(); }
     public int getBitsStored() { return bitsStored; }
     public int getSamplesPerPixel() { return samplesPerPixel; }
     public java.util.Map<String, String> getMetadata() { return metadata; }
+
+    private static boolean validPixelSpacing(double spacing) {
+        return Double.isFinite(spacing) && spacing > 0;
+    }
 
     public BufferedImage toBufferedImage() {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
